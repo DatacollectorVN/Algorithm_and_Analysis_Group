@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from services.dataset import build_normalized_corpus, normalize_query_raw
+from services.dataset import Corpuses
 from services.dto import RawProfile
 from services.jsonio import load_corpus_json, load_query_json
 
@@ -58,8 +58,8 @@ class TestJsonIO(unittest.TestCase):
                 RawProfile("q", 30.0, 55.0, 3.0, "master", "finance"),
                 RawProfile("o", 40.0, 60.0, 2.0, "bachelor", "software"),
             ]
-            norm, stats = build_normalized_corpus(corpus)
-            normalize_query_raw(ref, stats)
+            norm, stats = Corpuses.build_normalized_corpus(corpus)
+            Corpuses.normalize_query_raw(ref, stats)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from services.dataset import Corpuses, iter_synthetic_profiles
+from services.dataset import Corpuses
 from services.helper import hits_equal
 from services.jsonio import dump_json
 from services.search.benchmark import timed_search, timed_searcher_construct
@@ -88,7 +88,7 @@ def run_generate_corpus(args: argparse.Namespace) -> int:
     if args.n_profiles < 1:
         raise SystemExit("--N requires an integer >= 1")
 
-    profiles = list(iter_synthetic_profiles(args.n_profiles, seed=args.seed))
+    profiles = list(Corpuses.iter_synthetic_profiles(args.n_profiles, seed=args.seed))
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = Path.cwd() / ".rmit" / "corpus" / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -116,7 +116,7 @@ def run_search(args: argparse.Namespace) -> int:
         else:
             out = _run_both_strategies_search(corpuses, query_vec, weights, k)
             logger.info(f"\n{dump_json(out)}\n")
-            n = len(corpuses.normalized)
+            n = len(corpuses.normalized_profiles)
             k_search = out["timing"]["kdtree_search_seconds"]
             k_build = out["timing"]["kdtree_build_seconds"]
             b_search = out["timing"]["baseline_search_seconds"]

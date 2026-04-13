@@ -2,15 +2,7 @@
 
 import unittest
 
-from services.dataset import (
-    apply_minmax,
-    build_normalized_corpus,
-    compute_scaling_stats,
-    degree_to_rank,
-    domain_to_index,
-    iter_synthetic_profiles,
-    raw_to_prevector,
-)
+from services.dataset import Corpuses
 from services.dto import RawProfile
 from services.helper import ValidationError
 
@@ -18,19 +10,21 @@ from services.helper import ValidationError
 class TestPipeline(unittest.TestCase):
     def test_degree_unknown(self) -> None:
         with self.assertRaises(ValidationError):
-            degree_to_rank("not_a_real_degree")
+            Corpuses.degree_to_rank("not_a_real_degree")
 
     def test_domain_unknown(self) -> None:
         with self.assertRaises(ValidationError):
-            domain_to_index("unknown_domain")
+            Corpuses.domain_to_index("unknown_domain")
 
     def test_minmax_constant_dimension(self) -> None:
-        stats = compute_scaling_stats([(1.0, 2.0, 3.0, 4.0, 5.0), (1.0, 2.0, 3.0, 4.0, 5.0)])
-        v = apply_minmax((1.0, 2.0, 3.0, 4.0, 5.0), stats)
+        stats = Corpuses.compute_scaling_stats(
+            [(1.0, 2.0, 3.0, 4.0, 5.0), (1.0, 2.0, 3.0, 4.0, 5.0)]
+        )
+        v = Corpuses.apply_minmax((1.0, 2.0, 3.0, 4.0, 5.0), stats)
         self.assertEqual(v, (0.0, 0.0, 0.0, 0.0, 0.0))
 
     def test_synthetic_in_ranges(self) -> None:
-        for p in iter_synthetic_profiles(50, seed=1):
+        for p in Corpuses.iter_synthetic_profiles(50, seed=1):
             self.assertTrue(18 <= p.age <= 70)
             self.assertGreaterEqual(p.monthly_income, 5.0)
             self.assertLessEqual(p.monthly_income, 100.0)
@@ -39,13 +33,13 @@ class TestPipeline(unittest.TestCase):
 
     def test_empty_corpus_rejected(self) -> None:
         with self.assertRaises(ValidationError):
-            build_normalized_corpus([])
+            Corpuses.build_normalized_corpus([])
 
     def test_raw_to_prevector_roundtrip_normalized(self) -> None:
         raw = RawProfile("t", 30.0, 50.0, 4.0, "bachelor", "software")
-        pre = raw_to_prevector(raw)
-        stats = compute_scaling_stats([pre])
-        norm = apply_minmax(pre, stats)
+        pre = Corpuses.raw_to_prevector(raw)
+        stats = Corpuses.compute_scaling_stats([pre])
+        norm = Corpuses.apply_minmax(pre, stats)
         self.assertEqual(norm, (0.0, 0.0, 0.0, 0.0, 0.0))
 
 

@@ -2,7 +2,7 @@
 
 import unittest
 
-from services.dataset import Corpuses, iter_synthetic_profiles
+from services.dataset import Corpuses
 from services.search.strategies.baseline import BaselineSearcher
 from services.search.strategies.kdtree import KDTreeSearcher
 
@@ -11,7 +11,7 @@ class TestEquivalence(unittest.TestCase):
     def test_multiple_seeds(self) -> None:
         w = (1.0, 2.0, 0.5, 1.5, 1.0)
         for seed in (0, 1, 42, 99):
-            raw = list(iter_synthetic_profiles(80, seed=seed))
+            raw = list(Corpuses.iter_synthetic_profiles(80, seed=seed))
             corpuses = Corpuses.from_raw(raw)
             base = BaselineSearcher(corpuses)
             tree = KDTreeSearcher(corpuses)

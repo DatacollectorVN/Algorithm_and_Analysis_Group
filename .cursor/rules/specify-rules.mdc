@@ -1,0 +1,35 @@
+---
+description: Project Development Guidelines
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Algorithm_and_Analysis_Group Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2026-04-13
+
+## Active Technologies
+
+- Python ≥3.12 (`requires-python` in `pyproject.toml`) + Standard library only at runtime (project constitution) (20260413-202436-corpuses-public-api)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] pytest [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] ruff check .
+
+## Code Style
+
+Python ≥3.12 (`requires-python` in `pyproject.toml`): Follow standard conventions
+
+## Recent Changes
+
+- 20260413-202436-corpuses-public-api: Added Python ≥3.12 (`requires-python` in `pyproject.toml`) + Standard library only at runtime (project constitution)
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->

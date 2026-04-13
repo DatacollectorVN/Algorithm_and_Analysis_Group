@@ -100,9 +100,9 @@ class KDTreeSearcher(SearchStrategy):
 
     def __init__(self, corpuses: Corpuses) -> None:
         super().__init__(corpuses)
-        if not corpuses.normalized:
+        if not corpuses.normalized_profiles:
             raise ValidationError("corpus must be non-empty for KDTreeSearcher")
-        self._root: _KDNode | None = _build_kdtree(list(corpuses.normalized), 0)
+        self._root: _KDNode | None = _build_kdtree(list(corpuses.normalized_profiles), 0)
 
     def search(
         self,
