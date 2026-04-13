@@ -1,0 +1,92 @@
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rmit-group-project"
+version = "0.1.0"
+description = "Top-k weighted profile similarity search (stdlib runtime; optional dev tooling)."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-asyncio>=0.21.1",
+    "pytest-cov",
+    "black>=23.11.0",
+    "isort>=5.12.0",
+    "pyrefly>=0.56.0",
+    "flake8",
+    "ruff>=0.1.0",
+]
+
+# Uncomment when `pave_utils/python_core` exists beside this project:
+# [tool.uv.sources]
+# pave-de-utils = { path = "pave_utils/python_core", editable = true }
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/services"]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.pyrefly]
+python-version = "3.12"
+ignore-errors-in-generated-code = true
+
+[tool.pyrefly.errors]
+bad-assignment = true
+bad-function-definition = false
+bad-argument-type = true
+deprecated = false
+missing-argument = true
+not-a-type = false
+missing-attribute = true
+unsupported-operation = true
+unbound-name = true
+no-matching-overload = true
+missing-import = false
+bad-return = true
+bad-param-name-override = false
+bad-override = false
+invalid-annotation = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "integration: mark test as integration test (requires external services)",
+]
+addopts = "-v --cov=services --cov-report=html --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "I",
+    "ANN",
+]
+ignore = [
+    "ANN401",
+    "ANN204",
+    "ANN206",
+]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"
