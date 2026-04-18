@@ -15,7 +15,7 @@ from services.helper import (
 )
 from services.search.distance import weighted_squared_distance
 from services.search.strategies.base import SearchStrategy
-from services.search.topk import _WorstKey, finalize_top_k, push_top_k
+from services.search.topk import TopKManager
 
 
 @dataclass(slots=True)
@@ -62,35 +62,31 @@ def _build_kdtree(points: list[NormalizedProfile], depth: int) -> _KDNode | None
     return _KDNode(node_point, axis, left, right, lo, hi)
 
 
-def _worst_distance(heap: list[_WorstKey]) -> float:
-    return heap[0].distance
-
-
 def _search_knn(
     node: _KDNode | None,
     query: tuple[float, float, float, float, float],
     weights: tuple[float, float, float, float, float],
     k: int,
-    heap: list[_WorstKey],
+    mgr: TopKManager,
 ) -> None:
     if node is None:
         return
     d = weighted_squared_distance(query, node.point.vector, weights)
-    push_top_k(heap, d, node.point.profile_id, k)
+    mgr.push(d, node.point.profile_id, k)
 
     axis = node.axis
     delta = query[axis] - node.point.vector[axis]
     near, far = (node.left, node.right) if delta < 0 else (node.right, node.left)
 
-    _search_knn(near, query, weights, k, heap)
+    _search_knn(near, query, weights, k, mgr)
 
     if far is not None:
-        if len(heap) < k:
-            _search_knn(far, query, weights, k, heap)
+        if mgr.size < k:
+            _search_knn(far, query, weights, k, mgr)
         else:
             lb = weighted_sq_dist_query_to_box(query, weights, far.bbox_lo, far.bbox_hi)
-            if lb <= _worst_distance(heap) + KD_TREE_LB_EPS:
-                _search_knn(far, query, weights, k, heap)
+            if lb <= mgr.worst_distance() + KD_TREE_LB_EPS:
+                _search_knn(far, query, weights, k, mgr)
 
 
 class KDTreeSearcher(SearchStrategy):
@@ -114,6 +110,6 @@ class KDTreeSearcher(SearchStrategy):
             raise ValidationError("k must be at least 1")
         if self._root is None:
             raise ValidationError("KD-tree not built")
-        heap: list[_WorstKey] = []
-        _search_knn(self._root, query_vector, weights, k, heap)
-        return finalize_top_k(heap)
+        mgr = TopKManager()
+        _search_knn(self._root, query_vector, weights, k, mgr)
+        return mgr.finalize()

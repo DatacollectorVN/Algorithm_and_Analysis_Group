@@ -27,20 +27,8 @@ def union_bbox(
     hi2: ProfileVector,
 ) -> tuple[ProfileVector, ProfileVector]:
     """Merge two axis-aligned boxes (component-wise min/max)."""
-    lo: ProfileVector = (
-        min(lo1[0], lo2[0]),
-        min(lo1[1], lo2[1]),
-        min(lo1[2], lo2[2]),
-        min(lo1[3], lo2[3]),
-        min(lo1[4], lo2[4]),
-    )
-    hi: ProfileVector = (
-        max(hi1[0], hi2[0]),
-        max(hi1[1], hi2[1]),
-        max(hi1[2], hi2[2]),
-        max(hi1[3], hi2[3]),
-        max(hi1[4], hi2[4]),
-    )
+    lo: ProfileVector = tuple(min(lo1[i], lo2[i]) for i in range(VECTOR_DIM))  # type: ignore[assignment]
+    hi: ProfileVector = tuple(max(hi1[i], hi2[i]) for i in range(VECTOR_DIM))  # type: ignore[assignment]
     return lo, hi
 
 
@@ -49,7 +37,7 @@ def weighted_sq_dist_query_to_box(
     weights: ProfileVector,
     lo: ProfileVector,
     hi: ProfileVector,
-) -> float:
+) -> float:  # ProfileVector is tuple[float, ...] — length enforced by VECTOR_DIM loop
     """Lower bound on Σ w_i (q_i - p_i)² for any ``p`` inside ``[lo, hi]``."""
     total = 0.0
     for i in range(VECTOR_DIM):

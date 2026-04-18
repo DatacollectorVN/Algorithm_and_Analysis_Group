@@ -46,32 +46,40 @@ class Corpuses:
             raise ValidationError(f"unknown highest_degree: {degree!r}") from exc
 
     @staticmethod
-    def domain_to_index(domain: str) -> float:
-        """Map a catalog ``favourite_domain`` string to a numeric index (float).
+    def domain_to_onehot(domain: str) -> tuple[float, ...]:
+        """Map a catalog ``favourite_domain`` string to a one-hot float tuple.
+
+        The returned tuple has one element per entry in :attr:`DOMAIN_CATALOG`.
+        The element at the catalog index of ``domain`` is ``1.0``; all others
+        are ``0.0``.
 
         Args:
             domain: Value from :attr:`DOMAIN_CATALOG`.
 
         Returns:
-            Index of ``domain`` in the catalog, as a float.
+            Tuple of ``len(DOMAIN_CATALOG)`` floats with exactly one ``1.0``.
 
         Raises:
             ValidationError: If ``domain`` is not in the catalog.
         """
         try:
-            return float(Corpuses.DOMAIN_CATALOG.index(domain))
+            idx = Corpuses.DOMAIN_CATALOG.index(domain)
         except ValueError as exc:
             raise ValidationError(f"unknown favourite_domain: {domain!r}") from exc
+        return tuple(1.0 if i == idx else 0.0 for i in range(len(Corpuses.DOMAIN_CATALOG)))
 
     @staticmethod
-    def raw_to_prevector(raw: RawProfile) -> tuple[float, float, float, float, float]:
-        """Encode a raw profile to five numeric features before Min–Max scaling.
+    def raw_to_prevector(raw: RawProfile) -> tuple[float, ...]:
+        """Encode a raw profile to 14 numeric features before Min–Max scaling.
+
+        Layout: ``(age, income, degree_rank, learning_hours, d0, d1, …, d9)``
+        where ``d0``–``d9`` are one-hot bits for ``favourite_domain``.
 
         Args:
             raw: Source profile.
 
         Returns:
-            ``(age, income, degree_rank, learning_hours, domain_index)`` as floats.
+            14-float tuple with numeric features followed by domain one-hot bits.
 
         Raises:
             ValidationError: If a categorical field is not in its catalog.
@@ -81,42 +89,44 @@ class Corpuses:
             float(raw.monthly_income),
             Corpuses.degree_to_rank(raw.highest_degree),
             float(raw.daily_learning_hours),
-            Corpuses.domain_to_index(raw.favourite_domain),
+            *Corpuses.domain_to_onehot(raw.favourite_domain),
         )
 
     @staticmethod
     def apply_minmax(
-        pre: tuple[float, float, float, float, float],
+        pre: tuple[float, ...],
         stats: ScalingStats,
-    ) -> tuple[float, float, float, float, float]:
-        """Min–Max scale one pre-vector using corpus ``stats``.
+    ) -> tuple[float, ...]:
+        """Min–Max scale the numeric dimensions of a pre-vector.
+
+        Indices 0–3 (age, income, degree_rank, learning_hours) are scaled with
+        ``minmax_scalar``. Indices 4 onward (one-hot domain bits) are copied
+        through unchanged because they are already bounded to ``{0.0, 1.0}``.
 
         Args:
-            pre: Five-dimensional feature tuple before scaling.
+            pre: 14-float feature tuple before scaling.
             stats: Per-dimension min and max from :meth:`compute_scaling_stats`.
 
         Returns:
-            Scaled tuple with each dimension in ``[0, 1]`` (per ``minmax_scalar``).
+            14-float scaled tuple.
         """
-        return (
-            minmax_scalar(pre[0], stats.mins[0], stats.maxs[0]),
-            minmax_scalar(pre[1], stats.mins[1], stats.maxs[1]),
-            minmax_scalar(pre[2], stats.mins[2], stats.maxs[2]),
-            minmax_scalar(pre[3], stats.mins[3], stats.maxs[3]),
-            minmax_scalar(pre[4], stats.mins[4], stats.maxs[4]),
+        numeric = tuple(
+            minmax_scalar(pre[i], stats.mins[i], stats.maxs[i]) for i in range(4)
         )
+        domain_bits = pre[4:]
+        return numeric + domain_bits
 
     @staticmethod
     def compute_scaling_stats(
-        pre_vectors: Sequence[tuple[float, float, float, float, float]],
+        pre_vectors: Sequence[tuple[float, ...]],
     ) -> ScalingStats:
         """Compute per-dimension min and max over pre-vectors.
 
         Args:
-            pre_vectors: Non-empty sequence of five-float rows.
+            pre_vectors: Non-empty sequence of 14-float rows.
 
         Returns:
-            Bundled min/max tuples.
+            Bundled min/max tuples (14 dimensions).
 
         Raises:
             ValidationError: If ``pre_vectors`` is empty.
@@ -130,8 +140,8 @@ class Corpuses:
                 mins[i] = min(mins[i], row[i])
                 maxs[i] = max(maxs[i], row[i])
         return ScalingStats(
-            mins=(mins[0], mins[1], mins[2], mins[3], mins[4]),
-            maxs=(maxs[0], maxs[1], maxs[2], maxs[3], maxs[4]),
+            mins=tuple(mins),
+            maxs=tuple(maxs),
         )
 
     @classmethod
@@ -192,7 +202,7 @@ class Corpuses:
     @staticmethod
     def normalize_query_raw(
         raw: RawProfile, stats: ScalingStats
-    ) -> tuple[float, float, float, float, float]:
+    ) -> tuple[float, ...]:
         """Normalize a query :class:`RawProfile` with given :class:`ScalingStats`.
 
         Args:
@@ -200,7 +210,7 @@ class Corpuses:
             stats: Scaling bounds from the corpus (e.g. ``corpuses.stats``).
 
         Returns:
-            Five-dimensional normalized query vector.
+            14-dimensional normalized query vector.
 
         Raises:
             ValidationError: If encoding fails for ``raw``.
@@ -268,27 +278,25 @@ class Corpuses:
             raise ValidationError("corpus must be non-empty")
         if stats is None:
             stats = ScalingStats(
-                mins=(0.0, 0.0, 0.0, 0.0, 0.0),
-                maxs=(1.0, 1.0, 1.0, 1.0, 1.0),
+                mins=tuple(0.0 for _ in range(VECTOR_DIM)),
+                maxs=tuple(1.0 for _ in range(VECTOR_DIM)),
             )
         return cls(normalized_profiles=tuple(profiles), stats=stats)
 
-    def normalize_query(self, raw: RawProfile) -> tuple[float, float, float, float, float]:
+    def normalize_query(self, raw: RawProfile) -> tuple[float, ...]:
         """Normalize a query profile using this corpus's scaling stats.
 
         Args:
             raw: Query reference as :class:`RawProfile`.
 
         Returns:
-            Normalized five-vector aligned to :attr:`stats`.
+            Normalized 14-vector aligned to :attr:`stats`.
         """
         return Corpuses.normalize_query_raw(raw, self.stats)
 
     def load_query(
         self, query_path: str | Path
-    ) -> tuple[
-        tuple[float, float, float, float, float], tuple[float, float, float, float, float], int
-    ]:
+    ) -> tuple[tuple[float, ...], tuple[float, ...], int]:
         """Load query JSON and normalize the reference using this corpus's stats.
 
         Args:
@@ -303,8 +311,8 @@ class Corpuses:
         from services.jsonio import load_query_json
 
         ref_raw: RawProfile
-        weights: tuple[float, float, float, float, float]
+        weights: tuple[float, ...]
         k: int
         ref_raw, weights, k = load_query_json(query_path)
-        query_vec: tuple[float, float, float, float, float] = self.normalize_query(ref_raw)
+        query_vec: tuple[float, ...] = self.normalize_query(ref_raw)
         return query_vec, weights, k

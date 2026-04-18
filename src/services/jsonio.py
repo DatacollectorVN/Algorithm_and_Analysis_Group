@@ -56,7 +56,7 @@ def _parse_corpus_record(item: Any, index: int) -> RawProfile:
 
 def load_query_json(
     path: str | Path,
-) -> tuple[RawProfile, tuple[float, float, float, float, float], int]:
+) -> tuple[RawProfile, tuple[float, ...], int]:
     """Load query file: reference profile, weights, and k.
 
     Args:
@@ -64,7 +64,8 @@ def load_query_json(
 
     Returns:
         ``(reference_raw, weights_tuple, k)`` with weights order matching the
-        normalized vector: age, income, education, hours, domain.
+        normalized vector: age, income, education, hours, then one weight per
+        domain catalog entry (``QUERY_WEIGHT_KEYS`` order).
 
     Raises:
         ValidationError: On malformed JSON or invalid values.
@@ -84,13 +85,7 @@ def load_query_json(
         if key not in wobj:
             raise ValidationError(f"weights missing key {key!r}")
         weights_list.append(float(wobj[key]))
-    weights = (
-        weights_list[0],
-        weights_list[1],
-        weights_list[2],
-        weights_list[3],
-        weights_list[4],
-    )
+    weights: tuple[float, ...] = tuple(weights_list)
     k = int(doc["k"])
     if k < 1:
         raise ValidationError("k must be at least 1")

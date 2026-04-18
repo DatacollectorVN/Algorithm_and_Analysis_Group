@@ -6,7 +6,7 @@ from services.dataset import Corpuses
 from services.helper import ValidationError
 from services.search.distance import weighted_squared_distance
 from services.search.strategies.base import SearchStrategy
-from services.search.topk import finalize_top_k, push_top_k
+from services.search.topk import TopKManager
 
 
 class BaselineSearcher(SearchStrategy):
@@ -28,8 +28,8 @@ class BaselineSearcher(SearchStrategy):
     ) -> list[tuple[str, float]]:
         if k < 1:
             raise ValidationError("k must be at least 1")
-        heap: list = []
+        mgr = TopKManager()
         for p in self._corpus:
             d = weighted_squared_distance(query_vector, p.vector, weights)
-            push_top_k(heap, d, p.profile_id, k)
-        return finalize_top_k(heap)
+            mgr.push(d, p.profile_id, k)
+        return mgr.finalize()
