@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from services.constants import KD_TREE_LB_EPS, VECTOR_DIM
 from services.dataset import Corpuses
-from services.dto import NormalizedProfile
+from services.dto import VectorizedProfile
 from services.helper import (
     ValidationError,
     bbox_of_point,
@@ -15,26 +15,26 @@ from services.helper import (
 )
 from services.search.distance import weighted_squared_distance
 from services.search.strategies.base import SearchStrategy
-from services.search.topk import _WorstKey, finalize_top_k, push_top_k
+from services.search.topk import TopKManager
 
 
 @dataclass(slots=True)
 class _KDNode:
     """KD-tree node with axis-aligned bounding box of its subtree."""
 
-    point: NormalizedProfile
+    point: VectorizedProfile
     axis: int
     left: _KDNode | None
     right: _KDNode | None
-    bbox_lo: tuple[float, float, float, float, float]
-    bbox_hi: tuple[float, float, float, float, float]
+    bbox_lo: tuple[float, ...]
+    bbox_hi: tuple[float, ...]
 
 
 def _merge_node_bbox(
-    point_vec: tuple[float, float, float, float, float],
+    point_vec: tuple[float, ...],
     left: _KDNode | None,
     right: _KDNode | None,
-) -> tuple[tuple[float, float, float, float, float], tuple[float, float, float, float, float]]:
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
     lo, hi = bbox_of_point(point_vec)
     if left is not None:
         lo, hi = union_bbox(lo, hi, left.bbox_lo, left.bbox_hi)
@@ -43,7 +43,7 @@ def _merge_node_bbox(
     return lo, hi
 
 
-def _build_kdtree(points: list[NormalizedProfile], depth: int) -> _KDNode | None:
+def _build_kdtree(points: list[VectorizedProfile], depth: int) -> _KDNode | None:
     if not points:
         return None
     if len(points) == 1:
@@ -62,35 +62,31 @@ def _build_kdtree(points: list[NormalizedProfile], depth: int) -> _KDNode | None
     return _KDNode(node_point, axis, left, right, lo, hi)
 
 
-def _worst_distance(heap: list[_WorstKey]) -> float:
-    return heap[0].distance
-
-
 def _search_knn(
     node: _KDNode | None,
-    query: tuple[float, float, float, float, float],
-    weights: tuple[float, float, float, float, float],
+    query: tuple[float, ...],
+    weights: tuple[float, ...],
     k: int,
-    heap: list[_WorstKey],
+    mgr: TopKManager,
 ) -> None:
     if node is None:
         return
     d = weighted_squared_distance(query, node.point.vector, weights)
-    push_top_k(heap, d, node.point.profile_id, k)
+    mgr.push(d, node.point.profile_id, k)
 
     axis = node.axis
     delta = query[axis] - node.point.vector[axis]
     near, far = (node.left, node.right) if delta < 0 else (node.right, node.left)
 
-    _search_knn(near, query, weights, k, heap)
+    _search_knn(near, query, weights, k, mgr)
 
     if far is not None:
-        if len(heap) < k:
-            _search_knn(far, query, weights, k, heap)
+        if mgr.size < k:
+            _search_knn(far, query, weights, k, mgr)
         else:
             lb = weighted_sq_dist_query_to_box(query, weights, far.bbox_lo, far.bbox_hi)
-            if lb <= _worst_distance(heap) + KD_TREE_LB_EPS:
-                _search_knn(far, query, weights, k, heap)
+            if lb <= mgr.worst_distance() + KD_TREE_LB_EPS:
+                _search_knn(far, query, weights, k, mgr)
 
 
 class KDTreeSearcher(SearchStrategy):
@@ -100,20 +96,20 @@ class KDTreeSearcher(SearchStrategy):
 
     def __init__(self, corpuses: Corpuses) -> None:
         super().__init__(corpuses)
-        if not corpuses.normalized_profiles:
+        if not corpuses.vectorized_profiles:
             raise ValidationError("corpus must be non-empty for KDTreeSearcher")
-        self._root: _KDNode | None = _build_kdtree(list(corpuses.normalized_profiles), 0)
+        self._root: _KDNode | None = _build_kdtree(list(corpuses.vectorized_profiles), 0)
 
     def search(
         self,
-        query_vector: tuple[float, float, float, float, float],
-        weights: tuple[float, float, float, float, float],
+        query_vector: tuple[float, ...],
+        weights: tuple[float, ...],
         k: int,
-    ) -> list[tuple[str, float]]:
+    ) -> list[tuple[int, float]]:
         if k < 1:
             raise ValidationError("k must be at least 1")
         if self._root is None:
             raise ValidationError("KD-tree not built")
-        heap: list[_WorstKey] = []
-        _search_knn(self._root, query_vector, weights, k, heap)
-        return finalize_top_k(heap)
+        mgr = TopKManager()
+        _search_knn(self._root, query_vector, weights, k, mgr)
+        return mgr.finalize()

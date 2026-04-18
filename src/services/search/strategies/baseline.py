@@ -6,7 +6,8 @@ from services.dataset import Corpuses
 from services.helper import ValidationError
 from services.search.distance import weighted_squared_distance
 from services.search.strategies.base import SearchStrategy
-from services.search.topk import finalize_top_k, push_top_k
+from services.search.topk import TopKManager
+from services.dto import TopKResult
 
 
 class BaselineSearcher(SearchStrategy):
@@ -16,20 +17,28 @@ class BaselineSearcher(SearchStrategy):
 
     def __init__(self, corpuses: Corpuses) -> None:
         super().__init__(corpuses)
-        if not corpuses.normalized_profiles:
+        if not corpuses.vectorized_profiles:
             raise ValidationError("corpus must be non-empty for BaselineSearcher")
-        self._corpus = list(corpuses.normalized_profiles)
+        self._corpus = list(corpuses.vectorized_profiles)
 
     def search(
         self,
-        query_vector: tuple[float, float, float, float, float],
-        weights: tuple[float, float, float, float, float],
+        query_vector: tuple[float, ...],
+        weights: tuple[float, ...],
         k: int,
-    ) -> list[tuple[str, float]]:
+    ) -> list[tuple[int, float]]:
         if k < 1:
             raise ValidationError("k must be at least 1")
-        heap: list = []
+        mgr: TopKManager = TopKManager()
         for p in self._corpus:
-            d = weighted_squared_distance(query_vector, p.vector, weights)
-            push_top_k(heap, d, p.profile_id, k)
-        return finalize_top_k(heap)
+            d: float = weighted_squared_distance(query_vector, p.vector, weights)
+            mgr.push(d, p.profile_id, k)
+        res: list[tuple[int, float]] = mgr.finalize()
+        profile_ids: list[int] = []
+        distances: list[float] = []
+        for id, dist in res:
+            profile_ids.append(id)
+            distances.append(dist)
+        return TopKResult(profile_ids=tuple(profile_ids), distances=tuple(distances))
+
+

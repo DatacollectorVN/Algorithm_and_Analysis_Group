@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import ClassVar, Iterator, Sequence
 
 from services.constants import DEGREE_CATALOG, DOMAIN_CATALOG, VECTOR_DIM
-from services.dto import NormalizedProfile, RawProfile, ScalingStats
+from services.dto import Profile, QProfile, ScalingStats, VectorizedProfile, VectorizedQueryProfile
 from services.helper import ValidationError, minmax_scalar
+from services.jsonio import load_query_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,8 +22,9 @@ class Corpuses:
     :class:`BaselineSearcher` and :class:`KDTreeSearcher`.
     """
 
-    normalized_profiles: tuple[NormalizedProfile, ...]
+    vectorized_profiles: tuple[VectorizedProfile, ...]
     stats: ScalingStats
+    raw_profiles: tuple[Profile, ...]
 
     DEGREE_CATALOG: ClassVar[tuple[str, ...]] = DEGREE_CATALOG
     DOMAIN_CATALOG: ClassVar[tuple[str, ...]] = DOMAIN_CATALOG
@@ -46,32 +48,40 @@ class Corpuses:
             raise ValidationError(f"unknown highest_degree: {degree!r}") from exc
 
     @staticmethod
-    def domain_to_index(domain: str) -> float:
-        """Map a catalog ``favourite_domain`` string to a numeric index (float).
+    def domain_to_onehot(domain: str) -> tuple[float, ...]:
+        """Map a catalog ``favourite_domain`` string to a one-hot float tuple.
+
+        The returned tuple has one element per entry in :attr:`DOMAIN_CATALOG`.
+        The element at the catalog index of ``domain`` is ``1.0``; all others
+        are ``0.0``.
 
         Args:
             domain: Value from :attr:`DOMAIN_CATALOG`.
 
         Returns:
-            Index of ``domain`` in the catalog, as a float.
+            Tuple of ``len(DOMAIN_CATALOG)`` floats with exactly one ``1.0``.
 
         Raises:
             ValidationError: If ``domain`` is not in the catalog.
         """
         try:
-            return float(Corpuses.DOMAIN_CATALOG.index(domain))
+            idx = Corpuses.DOMAIN_CATALOG.index(domain)
         except ValueError as exc:
             raise ValidationError(f"unknown favourite_domain: {domain!r}") from exc
+        return tuple(1.0 if i == idx else 0.0 for i in range(len(Corpuses.DOMAIN_CATALOG)))
 
     @staticmethod
-    def raw_to_prevector(raw: RawProfile) -> tuple[float, float, float, float, float]:
-        """Encode a raw profile to five numeric features before Min–Max scaling.
+    def raw_to_prevector(raw: Profile | QProfile) -> tuple[float, ...]:
+        """Encode a raw profile to 14 numeric features before Min–Max scaling.
+
+        Layout: ``(age, income, degree_rank, learning_hours, d0, d1, …, d9)``
+        where ``d0``–``d9`` are one-hot bits for ``favourite_domain``.
 
         Args:
-            raw: Source profile.
+            raw: Corpus :class:`Profile` or query :class:`QProfile` (no ``profile_id`` required).
 
         Returns:
-            ``(age, income, degree_rank, learning_hours, domain_index)`` as floats.
+            14-float tuple with numeric features followed by domain one-hot bits.
 
         Raises:
             ValidationError: If a categorical field is not in its catalog.
@@ -81,42 +91,44 @@ class Corpuses:
             float(raw.monthly_income),
             Corpuses.degree_to_rank(raw.highest_degree),
             float(raw.daily_learning_hours),
-            Corpuses.domain_to_index(raw.favourite_domain),
+            *Corpuses.domain_to_onehot(raw.favourite_domain),
         )
 
     @staticmethod
     def apply_minmax(
-        pre: tuple[float, float, float, float, float],
+        pre: tuple[float, ...],
         stats: ScalingStats,
-    ) -> tuple[float, float, float, float, float]:
-        """Min–Max scale one pre-vector using corpus ``stats``.
+    ) -> tuple[float, ...]:
+        """Min–Max scale the numeric dimensions of a pre-vector.
+
+        Indices 0–3 (age, income, degree_rank, learning_hours) are scaled with
+        ``minmax_scalar``. Indices 4 onward (one-hot domain bits) are copied
+        through unchanged because they are already bounded to ``{0.0, 1.0}``.
 
         Args:
-            pre: Five-dimensional feature tuple before scaling.
+            pre: 14-float feature tuple before scaling.
             stats: Per-dimension min and max from :meth:`compute_scaling_stats`.
 
         Returns:
-            Scaled tuple with each dimension in ``[0, 1]`` (per ``minmax_scalar``).
+            14-float scaled tuple.
         """
-        return (
-            minmax_scalar(pre[0], stats.mins[0], stats.maxs[0]),
-            minmax_scalar(pre[1], stats.mins[1], stats.maxs[1]),
-            minmax_scalar(pre[2], stats.mins[2], stats.maxs[2]),
-            minmax_scalar(pre[3], stats.mins[3], stats.maxs[3]),
-            minmax_scalar(pre[4], stats.mins[4], stats.maxs[4]),
+        numeric = tuple(
+            minmax_scalar(pre[i], stats.mins[i], stats.maxs[i]) for i in range(4)
         )
+        domain_bits = pre[4:]
+        return numeric + domain_bits
 
     @staticmethod
     def compute_scaling_stats(
-        pre_vectors: Sequence[tuple[float, float, float, float, float]],
+        pre_vectors: Sequence[tuple[float, ...]],
     ) -> ScalingStats:
         """Compute per-dimension min and max over pre-vectors.
 
         Args:
-            pre_vectors: Non-empty sequence of five-float rows.
+            pre_vectors: Non-empty sequence of 14-float rows.
 
         Returns:
-            Bundled min/max tuples.
+            Bundled min/max tuples (14 dimensions).
 
         Raises:
             ValidationError: If ``pre_vectors`` is empty.
@@ -130,14 +142,14 @@ class Corpuses:
                 mins[i] = min(mins[i], row[i])
                 maxs[i] = max(maxs[i], row[i])
         return ScalingStats(
-            mins=(mins[0], mins[1], mins[2], mins[3], mins[4]),
-            maxs=(maxs[0], maxs[1], maxs[2], maxs[3], maxs[4]),
+            mins=tuple(mins),
+            maxs=tuple(maxs),
         )
 
     @classmethod
     def iter_synthetic_profiles(
         cls, count: int, *, seed: int | None = None
-    ) -> Iterator[RawProfile]:
+    ) -> Iterator[Profile]:
         """Yield ``count`` synthetic profiles using only ``random``.
 
         Args:
@@ -145,7 +157,8 @@ class Corpuses:
             seed: Optional RNG seed for reproducibility.
 
         Yields:
-            :class:`RawProfile` instances with ids ``synth-0``, ...
+            :class:`Profile` instances whose ``profile_id`` runs from ``1`` to ``count``
+            inclusive.
 
         Raises:
             ValidationError: If ``count`` is negative.
@@ -154,8 +167,8 @@ class Corpuses:
             raise ValidationError("count must be non-negative")
         rng: random.Random = random.Random(seed)
         for i in range(count):
-            yield RawProfile(
-                profile_id=f"synth-{i}",
+            yield Profile(
+                profile_id=i + 1,
                 age=float(rng.randint(18, 70)),
                 monthly_income=rng.uniform(5.0, 100.0),
                 daily_learning_hours=rng.uniform(0.0, 8.0),
@@ -165,15 +178,15 @@ class Corpuses:
 
     @classmethod
     def build_normalized_corpus(
-        cls, raw_profiles: Sequence[RawProfile]
-    ) -> tuple[list[NormalizedProfile], ScalingStats]:
+        cls, raw_profiles: Sequence[Profile]
+    ) -> tuple[list[VectorizedProfile], ScalingStats]:
         """Two-pass Min–Max: encode, compute stats, then normalize each row.
 
         Args:
             raw_profiles: Non-empty sequence of raw profiles.
 
         Returns:
-            ``(normalized_profiles, scaling_stats)``.
+            ``(vectorized_profiles, scaling_stats)``.
 
         Raises:
             ValidationError: If ``raw_profiles`` is empty or encoding fails.
@@ -184,23 +197,23 @@ class Corpuses:
             cls.raw_to_prevector(r) for r in raw_profiles
         ]
         stats: ScalingStats = cls.compute_scaling_stats(pre)
-        normalized: list[NormalizedProfile] = []
+        normalized: list[VectorizedProfile] = []
         for r, pv in zip(raw_profiles, pre, strict=True):
-            normalized.append(NormalizedProfile(r.profile_id, cls.apply_minmax(pv, stats)))
+            normalized.append(VectorizedProfile(r.profile_id, cls.apply_minmax(pv, stats)))
         return normalized, stats
 
     @staticmethod
     def normalize_query_raw(
-        raw: RawProfile, stats: ScalingStats
-    ) -> tuple[float, float, float, float, float]:
-        """Normalize a query :class:`RawProfile` with given :class:`ScalingStats`.
+        raw: Profile | QProfile, stats: ScalingStats
+    ) -> tuple[float, ...]:
+        """Normalize a query profile with given :class:`ScalingStats`.
 
         Args:
-            raw: Query reference profile.
+            raw: Query reference (:class:`Profile` or :class:`QProfile`).
             stats: Scaling bounds from the corpus (e.g. ``corpuses.stats``).
 
         Returns:
-            Five-dimensional normalized query vector.
+            14-dimensional normalized query vector.
 
         Raises:
             ValidationError: If encoding fails for ``raw``.
@@ -208,28 +221,28 @@ class Corpuses:
         return Corpuses.apply_minmax(Corpuses.raw_to_prevector(raw), stats)
 
     @classmethod
-    def from_raw(cls, raw: Sequence[RawProfile]) -> Corpuses:
+    def from_raw(cls, raw: Sequence[Profile]) -> Corpuses:
         """Build a corpus bundle from raw profiles (two-pass Min–Max).
 
         Args:
             raw: Non-empty sequence of raw profiles.
 
         Returns:
-            Frozen bundle of normalized profiles and stats.
+            Frozen bundle of vectorized profiles and stats.
 
         Raises:
             ValidationError: If ``raw`` is empty or invalid.
         """
-        normalized: list[NormalizedProfile]
+        normalized: list[VectorizedProfile]
         stats: ScalingStats
         normalized, stats = cls.build_normalized_corpus(raw)
-        return cls(normalized_profiles=tuple(normalized), stats=stats)
+        return cls(vectorized_profiles=tuple(normalized), stats=stats, raw_profiles=tuple(raw))
 
     @classmethod
     def from_json_path(cls, corpus_path: str | Path) -> Corpuses:
         """Load corpus JSON from disk and return a :class:`Corpuses` bundle.
 
-        Used by the ``search`` CLI path (not ``generate-corpus``).
+        Used by the ``search`` CLI path (not ``build``).
 
         Args:
             corpus_path: Path to a UTF-8 JSON array of corpus records.
@@ -242,20 +255,20 @@ class Corpuses:
         """
         from services.jsonio import load_corpus_json
 
-        raw = load_corpus_json(corpus_path)
+        raw: list[Profile] = load_corpus_json(corpus_path)
         return cls.from_raw(raw)
 
     @classmethod
     def from_normalized(
         cls,
-        profiles: Sequence[NormalizedProfile],
+        profiles: Sequence[VectorizedProfile],
         *,
         stats: ScalingStats | None = None,
     ) -> Corpuses:
         """Wrap an already-normalized corpus (e.g. tests).
 
         Args:
-            profiles: Non-empty normalized profiles.
+            profiles: Non-empty vectorized profiles.
             stats: Optional stats; defaults to ``[0,1]^5`` min/max if omitted.
 
         Returns:
@@ -268,43 +281,55 @@ class Corpuses:
             raise ValidationError("corpus must be non-empty")
         if stats is None:
             stats = ScalingStats(
-                mins=(0.0, 0.0, 0.0, 0.0, 0.0),
-                maxs=(1.0, 1.0, 1.0, 1.0, 1.0),
+                mins=tuple(0.0 for _ in range(VECTOR_DIM)),
+                maxs=tuple(1.0 for _ in range(VECTOR_DIM)),
             )
-        return cls(normalized_profiles=tuple(profiles), stats=stats)
+        return cls(vectorized_profiles=tuple(profiles), stats=stats, raw_profiles=tuple(profiles)  )
 
-    def normalize_query(self, raw: RawProfile) -> tuple[float, float, float, float, float]:
+    def normalize_query(self, raw: Profile | QProfile) -> tuple[float, ...]:
         """Normalize a query profile using this corpus's scaling stats.
 
         Args:
-            raw: Query reference as :class:`RawProfile`.
+            raw: Query reference (:class:`Profile` or :class:`QProfile`).
 
         Returns:
-            Normalized five-vector aligned to :attr:`stats`.
+            Normalized 14-vector aligned to :attr:`stats`.
         """
         return Corpuses.normalize_query_raw(raw, self.stats)
 
-    def load_query(
-        self, query_path: str | Path
-    ) -> tuple[
-        tuple[float, float, float, float, float], tuple[float, float, float, float, float], int
-    ]:
-        """Load query JSON and normalize the reference using this corpus's stats.
+    def get_profile(self, profile_id: int) -> Profile:
+        """Get a raw profile by ``profile_id``."""
+        return self.raw_profiles[profile_id - 1]
+    
+    def get_profiles(self, profile_ids: Sequence[int]) -> tuple[Profile, ...]:
+        """Get raw profiles by ``profile_ids``."""
+        return tuple(self.raw_profiles[pid - 1] for pid in profile_ids)
+
+    def build_vectorized_query(self, query_path: str | Path) -> VectorizedQueryProfile:
+        """Load query JSON and normalize the query profile using this corpus's stats.
 
         Args:
-            query_path: Path to query object (``reference``, ``weights``, ``k``).
+            query_path: Path to query object (``profile``, ``weights``, ``k``).
 
         Returns:
-            ``(normalized_query_vector, weights_tuple, k)``.
+            :class:`VectorizedQueryProfile` with normalized ``vector``, ``weights``, and ``k``.
 
         Raises:
-            ValidationError: If JSON is invalid.
+            ValidationError: If JSON is invalid or vector/weights length mismatch.
         """
-        from services.jsonio import load_query_json
 
-        ref_raw: RawProfile
-        weights: tuple[float, float, float, float, float]
+        ref_raw: QProfile
+        weights: tuple[float, ...]
         k: int
         ref_raw, weights, k = load_query_json(query_path)
-        query_vec: tuple[float, float, float, float, float] = self.normalize_query(ref_raw)
-        return query_vec, weights, k
+        query_vec: tuple[float, ...] = self.normalize_query(ref_raw)
+        if len(query_vec) != VECTOR_DIM or len(weights) != VECTOR_DIM:
+            raise ValidationError(
+                f"query vector length {len(query_vec)} and weights length {len(weights)} "
+                f"must equal VECTOR_DIM ({VECTOR_DIM})"
+            )
+        return VectorizedQueryProfile(
+            vector=tuple(query_vec),
+            weights=tuple(weights),
+            k=k,
+        )

@@ -6,19 +6,19 @@ import json
 from pathlib import Path
 from typing import Any
 
-from services.constants import QUERY_WEIGHT_KEYS
-from services.dto import RawProfile
+from services.constants import DOMAIN_CATALOG, QUERY_WEIGHT_KEYS
+from services.dto import Profile, QProfile, QueryProfile
 from services.helper import ValidationError
 
 
-def load_corpus_json(path: str | Path) -> list[RawProfile]:
+def load_corpus_json(path: str | Path) -> list[Profile]:
     """Load a JSON array of corpus records from disk.
 
     Args:
         path: File path to UTF-8 JSON array.
 
     Returns:
-        List of :class:`RawProfile` instances.
+        List of :class:`Profile` instances.
 
     Raises:
         ValidationError: If structure or fields are invalid.
@@ -27,74 +27,108 @@ def load_corpus_json(path: str | Path) -> list[RawProfile]:
     raw = json.loads(p.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
         raise ValidationError("corpus JSON must be an array")
-    return [_parse_corpus_record(item, i) for i, item in enumerate(raw)]
+    return [Profile.init_from_json(item, label=f"corpus[{i}]") for i, item in enumerate(raw)]
 
 
-def _parse_corpus_record(item: Any, index: int) -> RawProfile:
-    if not isinstance(item, dict):
-        raise ValidationError(f"corpus[{index}] must be an object")
-    required = (
-        "profile_id",
-        "age",
-        "monthly_income",
-        "daily_learning_hours",
-        "highest_degree",
-        "favourite_domain",
-    )
-    for key in required:
-        if key not in item:
-            raise ValidationError(f"corpus[{index}] missing key {key!r}")
-    return RawProfile(
-        profile_id=str(item["profile_id"]),
-        age=float(item["age"]),
-        monthly_income=float(item["monthly_income"]),
-        daily_learning_hours=float(item["daily_learning_hours"]),
-        highest_degree=str(item["highest_degree"]),
-        favourite_domain=str(item["favourite_domain"]),
-    )
+def _float_weight(value: Any, *, key: str) -> float:
+    if isinstance(value, bool):
+        raise ValidationError(f"weights.{key} must be a number, not bool")
+    if isinstance(value, (int, float)):
+        return float(value)
+    raise ValidationError(f"weights.{key} must be a number")
+
+
+def _degree_weight(wobj: dict[str, Any]) -> float:
+    if "highest_degree" not in wobj:
+        raise ValidationError("weights missing key 'highest_degree'")
+    return _float_weight(wobj["highest_degree"], key="highest_degree")
+
+
+def _domain_weight_keys() -> tuple[str, ...]:
+    return QUERY_WEIGHT_KEYS[4:]
+
+
+def _shorthand_domain_scalar(wobj: dict[str, Any]) -> float | None:
+    """Scalar weight applied along the profile domain one-hot axis, or None if absent."""
+    if "domain" in wobj:
+        return _float_weight(wobj["domain"], key="domain")
+    if "favourite_domain" in wobj:
+        v = wobj["favourite_domain"]
+        if isinstance(v, str):
+            raise ValidationError(
+                "weights.favourite_domain must be a number when used as a domain weight; "
+                "put the domain string on profile.favourite_domain"
+            )
+        return _float_weight(v, key="favourite_domain")
+    return None
+
+
+def _weights_tuple(wobj: dict[str, Any], profile: Profile | QProfile) -> tuple[float, ...]:
+    age = _float_weight(wobj["age"], key="age")
+    income = _float_weight(wobj["monthly_income"], key="monthly_income")
+    deg_w = _degree_weight(wobj)
+    hours = _float_weight(wobj["daily_learning_hours"], key="daily_learning_hours")
+
+    domain_keys = _domain_weight_keys()
+    explicit = [k for k in domain_keys if k in wobj]
+    shorthand = _shorthand_domain_scalar(wobj)
+
+    if explicit and shorthand is not None:
+        raise ValidationError(
+            "weights: use either all domain_* keys or a single domain shorthand "
+            "('domain' or numeric 'favourite_domain'), not both"
+        )
+    if explicit:
+        if len(explicit) != len(domain_keys):
+            raise ValidationError(
+                f"weights: expected all {len(domain_keys)} domain_* keys, "
+                f"missing {[k for k in domain_keys if k not in wobj]!r}"
+            )
+        domain_weights = [_float_weight(wobj[k], key=k) for k in domain_keys]
+    elif shorthand is not None:
+        try:
+            idx = DOMAIN_CATALOG.index(profile.favourite_domain)
+        except ValueError as exc:
+            raise ValidationError(
+                f"profile.favourite_domain {profile.favourite_domain!r} is not in catalog"
+            ) from exc
+        domain_weights = [0.0] * len(domain_keys)
+        domain_weights[idx] = shorthand
+    else:
+        raise ValidationError(
+            "weights: provide all per-domain keys "
+            f"({domain_keys[0]!r} …) or a single 'domain' / numeric 'favourite_domain' weight"
+        )
+
+    return (age, income, deg_w, hours, *domain_weights)
 
 
 def load_query_json(
     path: str | Path,
-) -> tuple[RawProfile, tuple[float, float, float, float, float], int]:
-    """Load query file: reference profile, weights, and k.
+) -> tuple[QProfile, tuple[float, ...], int]:
+    """Load query file: profile, weights, and k.
+
+    The file is parsed into :class:`~services.dto.QueryProfile`, then weights are
+    resolved to a 14-float tuple in ``QUERY_WEIGHT_KEYS`` order.
 
     Args:
-        path: UTF-8 JSON object with ``reference``, ``weights``, ``k``.
+        path: UTF-8 JSON object with ``profile``, ``weights``, ``k``.
 
     Returns:
-        ``(reference_raw, weights_tuple, k)`` with weights order matching the
-        normalized vector: age, income, education, hours, domain.
+        ``(qprofile, weights_tuple, k)`` with weights in ``QUERY_WEIGHT_KEYS`` order.
+        Query ``profile`` objects do not require ``profile_id`` (see :class:`~services.dto.QProfile`).
 
     Raises:
         ValidationError: On malformed JSON or invalid values.
     """
     p = Path(path)
     doc = json.loads(p.read_text(encoding="utf-8"))
-    if not isinstance(doc, dict):
-        raise ValidationError("query JSON must be an object")
-    if "reference" not in doc or "weights" not in doc or "k" not in doc:
-        raise ValidationError("query JSON requires reference, weights, k")
-    ref = _parse_corpus_record(doc["reference"], -1)
-    wobj = doc["weights"]
-    if not isinstance(wobj, dict):
-        raise ValidationError("weights must be an object")
-    weights_list: list[float] = []
-    for key in QUERY_WEIGHT_KEYS:
-        if key not in wobj:
-            raise ValidationError(f"weights missing key {key!r}")
-        weights_list.append(float(wobj[key]))
-    weights = (
-        weights_list[0],
-        weights_list[1],
-        weights_list[2],
-        weights_list[3],
-        weights_list[4],
-    )
-    k = int(doc["k"])
-    if k < 1:
-        raise ValidationError("k must be at least 1")
-    return ref, weights, k
+    qp = QueryProfile.from_document(doc)
+    weights = _weights_tuple(qp.weights_dict(), qp.profile)
+    if len(weights) != len(QUERY_WEIGHT_KEYS):
+        raise ValidationError("internal error: weights length mismatch")
+
+    return qp.profile, weights, qp.k
 
 
 def dump_json(data: object) -> str:

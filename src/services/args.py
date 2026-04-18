@@ -9,14 +9,14 @@ def build_parser() -> argparse.ArgumentParser:
     subs = p.add_subparsers(dest="command", required=True, help="Available commands")
 
     gen = subs.add_parser(
-        "generate-corpus",
-        help="Write N synthetic profiles to .rmit/corpus/YYYYMMDD_HHMMSS/corpus.json (+ metadata).",
+        "build",
+        help="Write n synthetic profiles to .rmit/dataset/YYYYMMDD_HHMMSS/profiles.json (+ metadata).",
     )
     gen.add_argument(
-        "--N",
+        "--n",
         type=int,
         dest="n_profiles",
-        metavar="N",
+        metavar="n",
         required=True,
         help="Number of synthetic profiles (integer ≥ 1).",
     )
@@ -25,11 +25,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sea = subs.add_parser("search", help="Run weighted top-k similarity search.")
-    sea.add_argument("--corpus", required=True, help="Path to JSON corpus array.")
-    sea.add_argument("--query", required=True, help="Path to JSON query (reference, weights, k).")
+    sea.add_argument("--dataset", required=True, help="Path to JSON dataset (profile array).")
+    sea.add_argument(
+        "--query-profile",
+        required=True,
+        dest="query_profile",
+        help="Path to JSON query (profile, weights, k).",
+    )
     sea.add_argument(
         "--strategy",
-        choices=("baseline", "kdtree", "both"),
+        choices=("baseline", "kdtree"),
         default="baseline",
         help="Search strategy (default: baseline).",
     )
