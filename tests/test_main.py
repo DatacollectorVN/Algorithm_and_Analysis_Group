@@ -1,4 +1,4 @@
-"""Tests for ``main`` CLI: ``generate-corpus`` and ``search`` subcommands (002)."""
+"""Tests for ``main`` CLI: ``build`` and ``search`` subcommands (002)."""
 
 from __future__ import annotations
 
@@ -53,10 +53,10 @@ _CORPUS_KEYS = frozenset(
 
 
 class TestMainGenerateCorpus(unittest.TestCase):
-    """User Story 1: synthetic corpus written under .rmit/corpus/YYYYMMDD_HHMMSS/."""
+    """User Story 1: synthetic profiles written under .rmit/dataset/YYYYMMDD_HHMMSS/."""
 
     def _latest_run_dir(self, base: Path) -> Path:
-        root = base / ".rmit" / "corpus"
+        root = base / ".rmit" / "dataset"
         self.assertTrue(root.is_dir())
         subdirs = sorted(p for p in root.iterdir() if p.is_dir())
         self.assertGreaterEqual(len(subdirs), 1)
@@ -69,17 +69,17 @@ class TestMainGenerateCorpus(unittest.TestCase):
             try:
                 os.chdir(td_path)
                 with _capture_runner_info_log() as buf:
-                    rc = main.run(["generate-corpus", "--N", "7", "--seed", "0"])
+                    rc = main.run(["build", "--n", "7", "--seed", "0"])
                 out = buf.getvalue()
-                self.assertIn("Corpus:", out)
+                self.assertIn("Dataset:", out)
                 self.assertIn("Metadata:", out)
-                self.assertIn("corpus.json", out)
+                self.assertIn("profiles.json", out)
                 self.assertIn("metadata.txt", out)
             finally:
                 os.chdir(prev)
             self.assertEqual(rc, 0)
             run_dir = self._latest_run_dir(td_path)
-            corpus_path = run_dir / "corpus.json"
+            corpus_path = run_dir / "profiles.json"
             meta_path = run_dir / "metadata.txt"
             self.assertTrue(re.fullmatch(r"\d{8}_\d{6}", run_dir.name))
             self.assertTrue(corpus_path.is_file())
@@ -100,35 +100,35 @@ class TestMainGenerateCorpus(unittest.TestCase):
                 try:
                     os.chdir(td_path)
                     with redirect_stdout(StringIO()):
-                        main.run(["generate-corpus", "--N", "20", "--seed", "42"])
+                        main.run(["build", "--n", "20", "--seed", "42"])
                 finally:
                     os.chdir(prev)
-                cpath = self._latest_run_dir(td_path) / "corpus.json"
+                cpath = self._latest_run_dir(td_path) / "profiles.json"
                 return cpath.read_text(encoding="utf-8")
 
         self.assertEqual(run_once(), run_once())
 
     def test_generate_rejects_n_lt_one(self) -> None:
         with self.assertRaises(SystemExit):
-            main.run(["generate-corpus", "--N", "0"])
+            main.run(["build", "--n", "0"])
 
     def test_generate_rejects_strategy_flag(self) -> None:
         with self.assertRaises(SystemExit):
-            main.run(["generate-corpus", "--N", "2", "--strategy", "baseline"])
+            main.run(["build", "--n", "2", "--strategy", "baseline"])
 
     def test_generate_rejects_benchmark(self) -> None:
         with self.assertRaises(SystemExit):
-            main.run(["generate-corpus", "--N", "2", "--benchmark"])
+            main.run(["build", "--n", "2", "--benchmark"])
 
     def test_generate_requires_n(self) -> None:
         with self.assertRaises(SystemExit):
-            main.run(["generate-corpus", "--seed", "1"])
+            main.run(["build", "--seed", "1"])
 
 
 def _sample_corpus_and_query() -> tuple[list[dict], dict]:
     corpus = [
         {
-            "profile_id": "p1",
+            "profile_id": 1,
             "age": 22,
             "monthly_income": 40.0,
             "daily_learning_hours": 2.5,
@@ -136,7 +136,7 @@ def _sample_corpus_and_query() -> tuple[list[dict], dict]:
             "favourite_domain": "software",
         },
         {
-            "profile_id": "p2",
+            "profile_id": 2,
             "age": 35,
             "monthly_income": 50.0,
             "daily_learning_hours": 3.0,
@@ -145,8 +145,8 @@ def _sample_corpus_and_query() -> tuple[list[dict], dict]:
         },
     ]
     query = {
-        "reference": {
-            "profile_id": "q",
+        "profile": {
+            "profile_id": 9,
             "age": 30,
             "monthly_income": 55.0,
             "daily_learning_hours": 3.0,
@@ -156,7 +156,7 @@ def _sample_corpus_and_query() -> tuple[list[dict], dict]:
         "weights": {
             "age": 1.0,
             "monthly_income": 1.0,
-            "education": 0.5,
+            "highest_degree": 0.5,
             "daily_learning_hours": 1.0,
             "domain_software": 1.0,
             "domain_data_science": 1.0,
@@ -188,9 +188,9 @@ class TestMainSearch(unittest.TestCase):
                 rc = main.run(
                     [
                         "search",
-                        "--corpus",
+                        "--dataset",
                         str(cpath),
-                        "--query",
+                        "--query-profile",
                         str(qpath),
                         "--strategy",
                         "baseline",
@@ -213,9 +213,9 @@ class TestMainSearch(unittest.TestCase):
                 rc = main.run(
                     [
                         "search",
-                        "--corpus",
+                        "--dataset",
                         str(cpath),
-                        "--query",
+                        "--query-profile",
                         str(qpath),
                         "--strategy",
                         "baseline",
@@ -239,9 +239,9 @@ class TestMainSearch(unittest.TestCase):
                 rc = main.run(
                     [
                         "search",
-                        "--corpus",
+                        "--dataset",
                         str(cpath),
-                        "--query",
+                        "--query-profile",
                         str(qpath),
                         "--strategy",
                         "kdtree",
@@ -254,7 +254,7 @@ class TestMainSearch(unittest.TestCase):
 
 
 class TestMainEndToEnd(unittest.TestCase):
-    """Phase 4–6: generate-corpus output feeds search (temp cwd)."""
+    """Phase 4–6: build output feeds search (temp cwd)."""
 
     def test_generate_then_search(self) -> None:
         _, query = _sample_corpus_and_query()
@@ -264,20 +264,20 @@ class TestMainEndToEnd(unittest.TestCase):
             try:
                 os.chdir(td_path)
                 with redirect_stdout(StringIO()):
-                    rc_gen = main.run(["generate-corpus", "--N", "5", "--seed", "7"])
+                    rc_gen = main.run(["build", "--n", "5", "--seed", "7"])
                 self.assertEqual(rc_gen, 0)
-                root = td_path / ".rmit" / "corpus"
+                root = td_path / ".rmit" / "dataset"
                 stamp_dirs = sorted(p for p in root.iterdir() if p.is_dir())
-                corpus_path = stamp_dirs[-1] / "corpus.json"
+                corpus_path = stamp_dirs[-1] / "profiles.json"
                 qpath = td_path / "q.json"
                 qpath.write_text(json.dumps(query), encoding="utf-8")
                 with _capture_runner_info_log() as buf:
                     rc_search = main.run(
                         [
                             "search",
-                            "--corpus",
+                            "--dataset",
                             str(corpus_path),
-                            "--query",
+                            "--query-profile",
                             str(qpath),
                             "--strategy",
                             "baseline",
@@ -295,19 +295,19 @@ class TestMainUsage(unittest.TestCase):
 
     def test_unknown_subcommand(self) -> None:
         with self.assertRaises(SystemExit):
-            main.run(["not-a-command", "--N", "1"])
+            main.run(["not-a-command", "--n", "1"])
 
     def test_missing_subcommand(self) -> None:
         with self.assertRaises(SystemExit):
             main.run([])
 
-    def test_search_missing_corpus(self) -> None:
+    def test_search_missing_dataset(self) -> None:
         with self.assertRaises(SystemExit):
-            main.run(["search", "--query", "/tmp/missing.json"])
+            main.run(["search", "--query-profile", "/tmp/missing.json"])
 
-    def test_search_missing_query(self) -> None:
+    def test_search_missing_query_profile(self) -> None:
         with self.assertRaises(SystemExit):
-            main.run(["search", "--corpus", "/tmp/missing.json"])
+            main.run(["search", "--dataset", "/tmp/missing.json"])
 
 
 if __name__ == "__main__":

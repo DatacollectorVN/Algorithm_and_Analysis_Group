@@ -4,7 +4,7 @@ import unittest
 
 from services.constants import VECTOR_DIM
 from services.dataset import Corpuses
-from services.dto import NormalizedProfile, RawProfile
+from services.dto import Profile, VectorizedProfile
 from services.helper import ValidationError
 from services.search.strategies.baseline import BaselineSearcher
 
@@ -17,9 +17,9 @@ _W: tuple[float, ...] = (1.0,) * VECTOR_DIM
 class TestBaseline(unittest.TestCase):
     def setUp(self) -> None:
         self.corpus = [
-            NormalizedProfile("a", _Z),
-            NormalizedProfile("b", _O),
-            NormalizedProfile("c", _H),
+            VectorizedProfile(1, _Z),
+            VectorizedProfile(2, _O),
+            VectorizedProfile(3, _H),
         ]
         self.w = _W
 
@@ -33,18 +33,18 @@ class TestBaseline(unittest.TestCase):
         c = Corpuses.from_normalized(self.corpus)
         s = BaselineSearcher(c)
         hits = s.search(_Z, self.w, k=1)
-        self.assertEqual(hits[0][0], "a")
+        self.assertEqual(hits[0][0], 1)
         self.assertEqual(hits[0][1], 0.0)
 
     def test_tie_distance_prefers_lexicographic_id(self) -> None:
         pts = [
-            NormalizedProfile("m", _Z),
-            NormalizedProfile("n", _Z),
+            VectorizedProfile(12, _Z),
+            VectorizedProfile(14, _Z),
         ]
         c = Corpuses.from_normalized(pts)
         s = BaselineSearcher(c)
         hits = s.search(_Z, self.w, k=1)
-        self.assertEqual(hits[0][0], "m")
+        self.assertEqual(hits[0][0], 12)
 
     def test_invalid_k(self) -> None:
         c = Corpuses.from_normalized(self.corpus)
@@ -54,8 +54,8 @@ class TestBaseline(unittest.TestCase):
 
     def test_from_raw_pipeline(self) -> None:
         raw = [
-            RawProfile("p1", 20.0, 10.0, 1.0, "bachelor", "software"),
-            RawProfile("p2", 40.0, 20.0, 2.0, "master", "finance"),
+            Profile(101, 20.0, 10.0, 1.0, "bachelor", "software"),
+            Profile(102, 40.0, 20.0, 2.0, "master", "finance"),
         ]
         corpuses = Corpuses.from_raw(raw)
         s = BaselineSearcher(corpuses)

@@ -24,11 +24,11 @@ class TopKDataStructure(ABC):
     """
 
     @abstractmethod
-    def push(self, distance: float, profile_id: str, k: int) -> None:
+    def push(self, distance: float, profile_id: int, k: int) -> None:
         """Insert a candidate; retain only the k best (smallest distance) entries."""
 
     @abstractmethod
-    def finalize(self) -> list[tuple[str, float]]:
+    def finalize(self) -> list[tuple[int, float]]:
         """Return accumulated results sorted by (distance, profile_id) ascending."""
 
     @property
@@ -42,9 +42,9 @@ class TopKDataStructure(ABC):
 
     def scan(
         self,
-        pairs: Iterable[tuple[str, float]],
+        pairs: Iterable[tuple[int, float]],
         k: int,
-    ) -> list[tuple[str, float]]:
+    ) -> list[tuple[int, float]]:
         """Feed an iterable of (profile_id, distance) pairs and return top-k.
 
         Mirrors ``scan_top_k`` from services.search.topk.
@@ -69,14 +69,14 @@ class MinHeapStorage(TopKDataStructure):
         # Each element: (distance, profile_id).
         # Comparison is *inverted*: larger (distance, profile_id) is "smaller" in
         # the heap so that heap[0] always holds the worst current candidate.
-        self._data: list[tuple[float, str]] = []
+        self._data: list[tuple[float, int]] = []
 
     # ------------------------------------------------------------------
     # Internal heap mechanics
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _worse(a: tuple[float, str], b: tuple[float, str]) -> bool:
+    def _worse(a: tuple[float, int], b: tuple[float, int]) -> bool:
         """Return True if a is a worse (larger) entry than b."""
         return a > b
 
@@ -107,11 +107,11 @@ class MinHeapStorage(TopKDataStructure):
             data[i], data[worst_child] = data[worst_child], data[i]
             i = worst_child
 
-    def _heap_push(self, item: tuple[float, str]) -> None:
+    def _heap_push(self, item: tuple[float, int]) -> None:
         self._data.append(item)
         self._sift_up(len(self._data) - 1)
 
-    def _heap_replace(self, item: tuple[float, str]) -> None:
+    def _heap_replace(self, item: tuple[float, int]) -> None:
         """Replace root with item (equivalent to heapreplace)."""
         self._data[0] = item
         self._sift_down(0)
@@ -120,7 +120,7 @@ class MinHeapStorage(TopKDataStructure):
     # TopKDataStructure interface
     # ------------------------------------------------------------------
 
-    def push(self, distance: float, profile_id: str, k: int) -> None:
+    def push(self, distance: float, profile_id: int, k: int) -> None:
         cand = (distance, profile_id)
         if len(self._data) < k:
             self._heap_push(cand)
@@ -129,7 +129,7 @@ class MinHeapStorage(TopKDataStructure):
         if cand < worst:
             self._heap_replace(cand)
 
-    def finalize(self) -> list[tuple[str, float]]:
+    def finalize(self) -> list[tuple[int, float]]:
         result = [(pid, dist) for dist, pid in self._data]
         result.sort(key=lambda t: (t[1], t[0]))
         return result
@@ -151,9 +151,9 @@ class SortedListStorage(TopKDataStructure):
 
     def __init__(self) -> None:
         # Stored as (distance, profile_id) in ascending order so index 0 is best.
-        self._data: list[tuple[float, str]] = []
+        self._data: list[tuple[float, int]] = []
 
-    def push(self, distance: float, profile_id: str, k: int) -> None:
+    def push(self, distance: float, profile_id: int, k: int) -> None:
         item = (distance, profile_id)
         pos = bisect.bisect_left(self._data, item)
         if pos >= k:
@@ -163,7 +163,7 @@ class SortedListStorage(TopKDataStructure):
         if len(self._data) > k:
             self._data.pop()  # Drop the worst (last) element.
 
-    def finalize(self) -> list[tuple[str, float]]:
+    def finalize(self) -> list[tuple[int, float]]:
         return [(pid, dist) for dist, pid in self._data]
 
     @property
@@ -185,11 +185,11 @@ class PriorityQueueStorage(MinHeapStorage):
     so callers can reason about it as a priority queue rather than a heap.
     """
 
-    def enqueue(self, distance: float, profile_id: str, k: int) -> None:
+    def enqueue(self, distance: float, profile_id: int, k: int) -> None:
         """Alias for push — add a candidate to the priority queue."""
         self.push(distance, profile_id, k)
 
-    def dequeue_best(self) -> tuple[str, float] | None:
+    def dequeue_best(self) -> tuple[int, float] | None:
         """Remove and return the best (lowest-distance) entry, or None if empty."""
         if not self._data:
             return None
@@ -216,24 +216,24 @@ class SegmentTreeStorage(TopKDataStructure):
     extracts the k smallest entries via repeated global-min queries in O(k log n).
     """
 
-    _INF_ENTRY: tuple[float, str] = (math.inf, "")
+    _INF_ENTRY: tuple[float, int] = (math.inf, 0)
 
     def __init__(self) -> None:
-        self._items: list[tuple[float, str]] = []  # (distance, profile_id)
+        self._items: list[tuple[float, int]] = []  # (distance, profile_id)
         self._k: int = 1
 
     # ------------------------------------------------------------------
     # Segment tree helpers
     # ------------------------------------------------------------------
 
-    def _build(self, arr: list[tuple[float, str]]) -> list[tuple[float, str]]:
+    def _build(self, arr: list[tuple[float, int]]) -> list[tuple[float, int]]:
         """Build a 1-indexed min-segment-tree over arr."""
         n = len(arr)
         size = 1
         while size < n:
             size <<= 1
         # tree[1..2*size-1]; leaves start at index `size`.
-        tree: list[tuple[float, str]] = [self._INF_ENTRY] * (2 * size)
+        tree: list[tuple[float, int]] = [self._INF_ENTRY] * (2 * size)
         for i, v in enumerate(arr):
             tree[size + i] = v
         for i in range(size - 1, 0, -1):
@@ -241,10 +241,10 @@ class SegmentTreeStorage(TopKDataStructure):
         return tree
 
     @staticmethod
-    def _leaf_count(tree: list[tuple[float, str]]) -> int:
+    def _leaf_count(tree: list[tuple[float, int]]) -> int:
         return len(tree) >> 1
 
-    def _query_min_idx(self, tree: list[tuple[float, str]]) -> int:
+    def _query_min_idx(self, tree: list[tuple[float, int]]) -> int:
         """Return the leaf index (0-based) of the global minimum."""
         i = 1
         size = self._leaf_count(tree)
@@ -252,7 +252,7 @@ class SegmentTreeStorage(TopKDataStructure):
             i = 2 * i if tree[2 * i] <= tree[2 * i + 1] else 2 * i + 1
         return i - size
 
-    def _mark_deleted(self, tree: list[tuple[float, str]], leaf_idx: int) -> None:
+    def _mark_deleted(self, tree: list[tuple[float, int]], leaf_idx: int) -> None:
         """Set leaf to INF and propagate upwards to maintain tree invariant."""
         size = self._leaf_count(tree)
         i = size + leaf_idx
@@ -266,16 +266,16 @@ class SegmentTreeStorage(TopKDataStructure):
     # TopKDataStructure interface
     # ------------------------------------------------------------------
 
-    def push(self, distance: float, profile_id: str, k: int) -> None:
+    def push(self, distance: float, profile_id: int, k: int) -> None:
         self._k = k
         self._items.append((distance, profile_id))
 
-    def finalize(self) -> list[tuple[str, float]]:
+    def finalize(self) -> list[tuple[int, float]]:
         if not self._items:
             return []
         k = min(self._k, len(self._items))
         tree = self._build(self._items)
-        extracted: list[tuple[float, str]] = []
+        extracted: list[tuple[float, int]] = []
         for _ in range(k):
             if tree[1] == self._INF_ENTRY:
                 break
@@ -306,7 +306,7 @@ class QuickSelectStorage(TopKDataStructure):
     """
 
     def __init__(self) -> None:
-        self._items: list[tuple[float, str]] = []
+        self._items: list[tuple[float, int]] = []
         self._k: int = 1
 
     # ------------------------------------------------------------------
@@ -315,8 +315,8 @@ class QuickSelectStorage(TopKDataStructure):
 
     @staticmethod
     def _median_of_three(
-        arr: list[tuple[float, str]], lo: int, hi: int
-    ) -> tuple[float, str]:
+        arr: list[tuple[float, int]], lo: int, hi: int
+    ) -> tuple[float, int]:
         mid = (lo + hi) >> 1
         a, b, c = arr[lo], arr[mid], arr[hi]
         if a <= b <= c or c <= b <= a:
@@ -327,7 +327,7 @@ class QuickSelectStorage(TopKDataStructure):
 
     @staticmethod
     def _partition(
-        arr: list[tuple[float, str]], lo: int, hi: int, pivot: tuple[float, str]
+        arr: list[tuple[float, int]], lo: int, hi: int, pivot: tuple[float, int]
     ) -> int:
         """Lomuto-style partition around pivot value; returns final pivot index."""
         pivot_idx = next(i for i in range(lo, hi + 1) if arr[i] == pivot)
@@ -340,7 +340,7 @@ class QuickSelectStorage(TopKDataStructure):
         arr[store], arr[hi] = arr[hi], arr[store]
         return store
 
-    def _quickselect(self, arr: list[tuple[float, str]], k: int) -> None:
+    def _quickselect(self, arr: list[tuple[float, int]], k: int) -> None:
         """Rearrange arr in-place so arr[:k] holds the k smallest elements."""
         lo, hi = 0, len(arr) - 1
         while lo < hi:
@@ -357,11 +357,11 @@ class QuickSelectStorage(TopKDataStructure):
     # TopKDataStructure interface
     # ------------------------------------------------------------------
 
-    def push(self, distance: float, profile_id: str, k: int) -> None:
+    def push(self, distance: float, profile_id: int, k: int) -> None:
         self._k = k
         self._items.append((distance, profile_id))
 
-    def finalize(self) -> list[tuple[str, float]]:
+    def finalize(self) -> list[tuple[int, float]]:
         n = len(self._items)
         k = min(self._k, n)
         if n == 0:

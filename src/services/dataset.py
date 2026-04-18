@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import ClassVar, Iterator, Sequence
 
 from services.constants import DEGREE_CATALOG, DOMAIN_CATALOG, VECTOR_DIM
-from services.dto import NormalizedProfile, RawProfile, ScalingStats
+from services.dto import Profile, QProfile, ScalingStats, VectorizedProfile, VectorizedQueryProfile
 from services.helper import ValidationError, minmax_scalar
+from services.jsonio import load_query_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,8 +22,9 @@ class Corpuses:
     :class:`BaselineSearcher` and :class:`KDTreeSearcher`.
     """
 
-    normalized_profiles: tuple[NormalizedProfile, ...]
+    vectorized_profiles: tuple[VectorizedProfile, ...]
     stats: ScalingStats
+    raw_profiles: tuple[Profile, ...]
 
     DEGREE_CATALOG: ClassVar[tuple[str, ...]] = DEGREE_CATALOG
     DOMAIN_CATALOG: ClassVar[tuple[str, ...]] = DOMAIN_CATALOG
@@ -69,14 +71,14 @@ class Corpuses:
         return tuple(1.0 if i == idx else 0.0 for i in range(len(Corpuses.DOMAIN_CATALOG)))
 
     @staticmethod
-    def raw_to_prevector(raw: RawProfile) -> tuple[float, ...]:
+    def raw_to_prevector(raw: Profile | QProfile) -> tuple[float, ...]:
         """Encode a raw profile to 14 numeric features before Min–Max scaling.
 
         Layout: ``(age, income, degree_rank, learning_hours, d0, d1, …, d9)``
         where ``d0``–``d9`` are one-hot bits for ``favourite_domain``.
 
         Args:
-            raw: Source profile.
+            raw: Corpus :class:`Profile` or query :class:`QProfile` (no ``profile_id`` required).
 
         Returns:
             14-float tuple with numeric features followed by domain one-hot bits.
@@ -147,7 +149,7 @@ class Corpuses:
     @classmethod
     def iter_synthetic_profiles(
         cls, count: int, *, seed: int | None = None
-    ) -> Iterator[RawProfile]:
+    ) -> Iterator[Profile]:
         """Yield ``count`` synthetic profiles using only ``random``.
 
         Args:
@@ -155,7 +157,8 @@ class Corpuses:
             seed: Optional RNG seed for reproducibility.
 
         Yields:
-            :class:`RawProfile` instances with ids ``synth-0``, ...
+            :class:`Profile` instances whose ``profile_id`` runs from ``1`` to ``count``
+            inclusive.
 
         Raises:
             ValidationError: If ``count`` is negative.
@@ -164,8 +167,8 @@ class Corpuses:
             raise ValidationError("count must be non-negative")
         rng: random.Random = random.Random(seed)
         for i in range(count):
-            yield RawProfile(
-                profile_id=f"synth-{i}",
+            yield Profile(
+                profile_id=i + 1,
                 age=float(rng.randint(18, 70)),
                 monthly_income=rng.uniform(5.0, 100.0),
                 daily_learning_hours=rng.uniform(0.0, 8.0),
@@ -175,15 +178,15 @@ class Corpuses:
 
     @classmethod
     def build_normalized_corpus(
-        cls, raw_profiles: Sequence[RawProfile]
-    ) -> tuple[list[NormalizedProfile], ScalingStats]:
+        cls, raw_profiles: Sequence[Profile]
+    ) -> tuple[list[VectorizedProfile], ScalingStats]:
         """Two-pass Min–Max: encode, compute stats, then normalize each row.
 
         Args:
             raw_profiles: Non-empty sequence of raw profiles.
 
         Returns:
-            ``(normalized_profiles, scaling_stats)``.
+            ``(vectorized_profiles, scaling_stats)``.
 
         Raises:
             ValidationError: If ``raw_profiles`` is empty or encoding fails.
@@ -194,19 +197,19 @@ class Corpuses:
             cls.raw_to_prevector(r) for r in raw_profiles
         ]
         stats: ScalingStats = cls.compute_scaling_stats(pre)
-        normalized: list[NormalizedProfile] = []
+        normalized: list[VectorizedProfile] = []
         for r, pv in zip(raw_profiles, pre, strict=True):
-            normalized.append(NormalizedProfile(r.profile_id, cls.apply_minmax(pv, stats)))
+            normalized.append(VectorizedProfile(r.profile_id, cls.apply_minmax(pv, stats)))
         return normalized, stats
 
     @staticmethod
     def normalize_query_raw(
-        raw: RawProfile, stats: ScalingStats
+        raw: Profile | QProfile, stats: ScalingStats
     ) -> tuple[float, ...]:
-        """Normalize a query :class:`RawProfile` with given :class:`ScalingStats`.
+        """Normalize a query profile with given :class:`ScalingStats`.
 
         Args:
-            raw: Query reference profile.
+            raw: Query reference (:class:`Profile` or :class:`QProfile`).
             stats: Scaling bounds from the corpus (e.g. ``corpuses.stats``).
 
         Returns:
@@ -218,28 +221,28 @@ class Corpuses:
         return Corpuses.apply_minmax(Corpuses.raw_to_prevector(raw), stats)
 
     @classmethod
-    def from_raw(cls, raw: Sequence[RawProfile]) -> Corpuses:
+    def from_raw(cls, raw: Sequence[Profile]) -> Corpuses:
         """Build a corpus bundle from raw profiles (two-pass Min–Max).
 
         Args:
             raw: Non-empty sequence of raw profiles.
 
         Returns:
-            Frozen bundle of normalized profiles and stats.
+            Frozen bundle of vectorized profiles and stats.
 
         Raises:
             ValidationError: If ``raw`` is empty or invalid.
         """
-        normalized: list[NormalizedProfile]
+        normalized: list[VectorizedProfile]
         stats: ScalingStats
         normalized, stats = cls.build_normalized_corpus(raw)
-        return cls(normalized_profiles=tuple(normalized), stats=stats)
+        return cls(vectorized_profiles=tuple(normalized), stats=stats, raw_profiles=tuple(raw))
 
     @classmethod
     def from_json_path(cls, corpus_path: str | Path) -> Corpuses:
         """Load corpus JSON from disk and return a :class:`Corpuses` bundle.
 
-        Used by the ``search`` CLI path (not ``generate-corpus``).
+        Used by the ``search`` CLI path (not ``build``).
 
         Args:
             corpus_path: Path to a UTF-8 JSON array of corpus records.
@@ -252,20 +255,20 @@ class Corpuses:
         """
         from services.jsonio import load_corpus_json
 
-        raw = load_corpus_json(corpus_path)
+        raw: list[Profile] = load_corpus_json(corpus_path)
         return cls.from_raw(raw)
 
     @classmethod
     def from_normalized(
         cls,
-        profiles: Sequence[NormalizedProfile],
+        profiles: Sequence[VectorizedProfile],
         *,
         stats: ScalingStats | None = None,
     ) -> Corpuses:
         """Wrap an already-normalized corpus (e.g. tests).
 
         Args:
-            profiles: Non-empty normalized profiles.
+            profiles: Non-empty vectorized profiles.
             stats: Optional stats; defaults to ``[0,1]^5`` min/max if omitted.
 
         Returns:
@@ -281,38 +284,52 @@ class Corpuses:
                 mins=tuple(0.0 for _ in range(VECTOR_DIM)),
                 maxs=tuple(1.0 for _ in range(VECTOR_DIM)),
             )
-        return cls(normalized_profiles=tuple(profiles), stats=stats)
+        return cls(vectorized_profiles=tuple(profiles), stats=stats, raw_profiles=tuple(profiles)  )
 
-    def normalize_query(self, raw: RawProfile) -> tuple[float, ...]:
+    def normalize_query(self, raw: Profile | QProfile) -> tuple[float, ...]:
         """Normalize a query profile using this corpus's scaling stats.
 
         Args:
-            raw: Query reference as :class:`RawProfile`.
+            raw: Query reference (:class:`Profile` or :class:`QProfile`).
 
         Returns:
             Normalized 14-vector aligned to :attr:`stats`.
         """
         return Corpuses.normalize_query_raw(raw, self.stats)
 
-    def load_query(
-        self, query_path: str | Path
-    ) -> tuple[tuple[float, ...], tuple[float, ...], int]:
-        """Load query JSON and normalize the reference using this corpus's stats.
+    def get_profile(self, profile_id: int) -> Profile:
+        """Get a raw profile by ``profile_id``."""
+        return self.raw_profiles[profile_id - 1]
+    
+    def get_profiles(self, profile_ids: Sequence[int]) -> tuple[Profile, ...]:
+        """Get raw profiles by ``profile_ids``."""
+        return tuple(self.raw_profiles[pid - 1] for pid in profile_ids)
+
+    def build_vectorized_query(self, query_path: str | Path) -> VectorizedQueryProfile:
+        """Load query JSON and normalize the query profile using this corpus's stats.
 
         Args:
-            query_path: Path to query object (``reference``, ``weights``, ``k``).
+            query_path: Path to query object (``profile``, ``weights``, ``k``).
 
         Returns:
-            ``(normalized_query_vector, weights_tuple, k)``.
+            :class:`VectorizedQueryProfile` with normalized ``vector``, ``weights``, and ``k``.
 
         Raises:
-            ValidationError: If JSON is invalid.
+            ValidationError: If JSON is invalid or vector/weights length mismatch.
         """
-        from services.jsonio import load_query_json
 
-        ref_raw: RawProfile
+        ref_raw: QProfile
         weights: tuple[float, ...]
         k: int
         ref_raw, weights, k = load_query_json(query_path)
         query_vec: tuple[float, ...] = self.normalize_query(ref_raw)
-        return query_vec, weights, k
+        if len(query_vec) != VECTOR_DIM or len(weights) != VECTOR_DIM:
+            raise ValidationError(
+                f"query vector length {len(query_vec)} and weights length {len(weights)} "
+                f"must equal VECTOR_DIM ({VECTOR_DIM})"
+            )
+        return VectorizedQueryProfile(
+            vector=tuple(query_vec),
+            weights=tuple(weights),
+            k=k,
+        )

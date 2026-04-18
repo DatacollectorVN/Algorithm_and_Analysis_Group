@@ -53,8 +53,8 @@ def weighted_sq_dist_query_to_box(
 
 
 def hits_equal(
-    a: list[tuple[str, float]],
-    b: list[tuple[str, float]],
+    a: list[tuple[int, float]],
+    b: list[tuple[int, float]],
     *,
     tol: float = HITS_EQUAL_ABS_TOL,
 ) -> bool:

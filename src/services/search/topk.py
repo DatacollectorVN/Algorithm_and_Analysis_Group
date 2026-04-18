@@ -43,7 +43,7 @@ class TopKManager:
 
         os.environ["TOPK_STORAGE"] = "sorted_list"
         mgr = TopKManager()
-        mgr.push(1.5, "alice", k=3)
+        mgr.push(1.5, 1, k=3)
         results = mgr.finalize()
     """
 
@@ -61,21 +61,21 @@ class TopKManager:
     # Core interface — mirrors push_top_k / finalize_top_k / scan_top_k
     # ------------------------------------------------------------------
 
-    def push(self, distance: float, profile_id: str, k: int) -> None:
+    def push(self, distance: float, profile_id: int, k: int) -> None:
         """Insert a candidate; retain only the k best (smallest distance) entries."""
         if k < 1:
             raise ValidationError("k must be at least 1")
         self._storage.push(distance, profile_id, k)
 
-    def finalize(self) -> list[tuple[str, float]]:
+    def finalize(self) -> list[tuple[int, float]]:
         """Return results sorted by (distance, profile_id) ascending."""
         return self._storage.finalize()
 
     def scan(
         self,
-        pairs: Iterable[tuple[str, float]],
+        pairs: Iterable[tuple[int, float]],
         k: int,
-    ) -> list[tuple[str, float]]:
+    ) -> list[tuple[int, float]]:
         """Feed an iterable of (profile_id, distance) pairs and return top-k."""
         return self._storage.scan(pairs, k)
 
@@ -102,7 +102,7 @@ class _WorstKey:
     """Min-heap key whose smallest element is the worst (largest) (distance, id)."""
 
     distance: float
-    profile_id: str
+    profile_id: int
 
     def __lt__(self, other: _WorstKey) -> bool:
         return (self.distance, self.profile_id) > (other.distance, other.profile_id)
@@ -111,7 +111,7 @@ class _WorstKey:
 def push_top_k(
     heap: list[_WorstKey],
     distance: float,
-    profile_id: str,
+    profile_id: int,
     k: int,
 ) -> None:
     if k < 1:
@@ -125,16 +125,16 @@ def push_top_k(
         heapq.heapreplace(heap, _WorstKey(distance, profile_id))
 
 
-def finalize_top_k(heap: list[_WorstKey]) -> list[tuple[str, float]]:
+def finalize_top_k(heap: list[_WorstKey]) -> list[tuple[int, float]]:
     items = [(w.profile_id, w.distance) for w in heap]
     items.sort(key=lambda t: (t[1], t[0]))
     return items
 
 
 def scan_top_k(
-    pairs: Iterable[tuple[str, float]],
+    pairs: Iterable[tuple[int, float]],
     k: int,
-) -> list[tuple[str, float]]:
+) -> list[tuple[int, float]]:
     h: list[_WorstKey] = []
     for pid, dist in pairs:
         push_top_k(h, dist, pid, k)

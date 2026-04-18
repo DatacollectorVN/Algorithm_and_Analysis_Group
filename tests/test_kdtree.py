@@ -5,23 +5,23 @@ import unittest
 
 from services.constants import VECTOR_DIM
 from services.dataset import Corpuses
-from services.dto import NormalizedProfile
+from services.dto import VectorizedProfile
 from services.search.distance import weighted_squared_distance
 from services.search.strategies.kdtree import KDTreeSearcher
 
 
 class TestKDTree(unittest.TestCase):
-    def _brute(self, corpus: list[NormalizedProfile], q: tuple[float, ...], w: tuple[float, ...], k: int) -> list[tuple[str, float]]:
+    def _brute(self, corpus: list[VectorizedProfile], q: tuple[float, ...], w: tuple[float, ...], k: int) -> list[tuple[int, float]]:
         scored = [(p.profile_id, weighted_squared_distance(q, p.vector, w)) for p in corpus]
         scored.sort(key=lambda t: (t[1], t[0]))
         return scored[:k]
 
     def test_matches_brute_small(self) -> None:
         rng = random.Random(0)
-        corpus: list[NormalizedProfile] = []
+        corpus: list[VectorizedProfile] = []
         for i in range(30):
             v = tuple(rng.random() for _ in range(VECTOR_DIM))
-            corpus.append(NormalizedProfile(f"id-{i}", v))
+            corpus.append(VectorizedProfile(i, v))
         w: tuple[float, ...] = tuple(
             [1.0, 0.5, 1.0, 0.25] + [1.0] * (VECTOR_DIM - 4)
         )
@@ -36,7 +36,7 @@ class TestKDTree(unittest.TestCase):
 
     def test_single_point(self) -> None:
         v: tuple[float, ...] = tuple(0.1 * (i + 1) for i in range(VECTOR_DIM))
-        corpus = [NormalizedProfile("only", v)]
+        corpus = [VectorizedProfile(1, v)]
         c = Corpuses.from_normalized(corpus)
         tree = KDTreeSearcher(c)
         w: tuple[float, ...] = (1.0,) * VECTOR_DIM

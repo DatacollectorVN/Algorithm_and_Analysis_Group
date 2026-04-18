@@ -2,14 +2,35 @@
 
 Public surface:
 
-- :class:`RawProfile` — corpus / query record before normalization
-- :class:`NormalizedProfile` — point in ``[0, 1]^14`` after Min–Max and one-hot encoding
+- :class:`Profile` — corpus row before normalization (requires ``profile_id``)
+- :class:`QProfile` — query ``profile`` object (no ``profile_id``)
+- :class:`QueryProfile` — validated query JSON (``profile``, ``weights``, ``k``)
+- :class:`VectorizedProfile` — point in ``[0, 1]^14`` after Min–Max and one-hot encoding (``profile_id``: ``int``)
+- :class:`VectorizedQueryProfile` — normalized query vector, weights, and ``k``
 - :class:`ScalingStats` — per-dimension min/max used for query alignment (14 dimensions)
 - :obj:`ProfileVector` — alias for a variable-length homogeneous float tuple
 """
 
 from __future__ import annotations
 
-from services.dto.profiles import NormalizedProfile, RawProfile, ScalingStats, ProfileVector
+from services.dto.profiles import (
+    Profile,
+    ProfileVector,
+    QProfile,
+    QueryProfile,
+    ScalingStats,
+    VectorizedProfile,
+    VectorizedQueryProfile,
+    TopKResult,
+)
 
-__all__ = ["RawProfile", "NormalizedProfile", "ScalingStats", "ProfileVector"]
+__all__ = [
+    "Profile",
+    "QProfile",
+    "QueryProfile",
+    "VectorizedProfile",
+    "VectorizedQueryProfile",
+    "ScalingStats",
+    "ProfileVector",
+    "TopKResult",
+]

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from services.constants import KD_TREE_LB_EPS, VECTOR_DIM
 from services.dataset import Corpuses
-from services.dto import NormalizedProfile
+from services.dto import VectorizedProfile
 from services.helper import (
     ValidationError,
     bbox_of_point,
@@ -22,19 +22,19 @@ from services.search.topk import TopKManager
 class _KDNode:
     """KD-tree node with axis-aligned bounding box of its subtree."""
 
-    point: NormalizedProfile
+    point: VectorizedProfile
     axis: int
     left: _KDNode | None
     right: _KDNode | None
-    bbox_lo: tuple[float, float, float, float, float]
-    bbox_hi: tuple[float, float, float, float, float]
+    bbox_lo: tuple[float, ...]
+    bbox_hi: tuple[float, ...]
 
 
 def _merge_node_bbox(
-    point_vec: tuple[float, float, float, float, float],
+    point_vec: tuple[float, ...],
     left: _KDNode | None,
     right: _KDNode | None,
-) -> tuple[tuple[float, float, float, float, float], tuple[float, float, float, float, float]]:
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
     lo, hi = bbox_of_point(point_vec)
     if left is not None:
         lo, hi = union_bbox(lo, hi, left.bbox_lo, left.bbox_hi)
@@ -43,7 +43,7 @@ def _merge_node_bbox(
     return lo, hi
 
 
-def _build_kdtree(points: list[NormalizedProfile], depth: int) -> _KDNode | None:
+def _build_kdtree(points: list[VectorizedProfile], depth: int) -> _KDNode | None:
     if not points:
         return None
     if len(points) == 1:
@@ -64,8 +64,8 @@ def _build_kdtree(points: list[NormalizedProfile], depth: int) -> _KDNode | None
 
 def _search_knn(
     node: _KDNode | None,
-    query: tuple[float, float, float, float, float],
-    weights: tuple[float, float, float, float, float],
+    query: tuple[float, ...],
+    weights: tuple[float, ...],
     k: int,
     mgr: TopKManager,
 ) -> None:
@@ -96,16 +96,16 @@ class KDTreeSearcher(SearchStrategy):
 
     def __init__(self, corpuses: Corpuses) -> None:
         super().__init__(corpuses)
-        if not corpuses.normalized_profiles:
+        if not corpuses.vectorized_profiles:
             raise ValidationError("corpus must be non-empty for KDTreeSearcher")
-        self._root: _KDNode | None = _build_kdtree(list(corpuses.normalized_profiles), 0)
+        self._root: _KDNode | None = _build_kdtree(list(corpuses.vectorized_profiles), 0)
 
     def search(
         self,
-        query_vector: tuple[float, float, float, float, float],
-        weights: tuple[float, float, float, float, float],
+        query_vector: tuple[float, ...],
+        weights: tuple[float, ...],
         k: int,
-    ) -> list[tuple[str, float]]:
+    ) -> list[tuple[int, float]]:
         if k < 1:
             raise ValidationError("k must be at least 1")
         if self._root is None:

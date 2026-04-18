@@ -33,11 +33,10 @@ DOMAIN_CATALOG: Final[tuple[str, ...]] = (
 )
 
 # Order of keys in query JSON ``weights`` object (matches normalized vector order).
-# 4 numeric features followed by one key per DOMAIN_CATALOG entry.
 QUERY_WEIGHT_KEYS: Final[tuple[str, ...]] = (
     "age",
     "monthly_income",
-    "education",
+    "highest_degree",
     "daily_learning_hours",
     "domain_software",
     "domain_data_science",

@@ -14,8 +14,8 @@ build/
 htmlcov/
 .ruff_cache/
 
-# CLI generate-corpus output (timestamped runs)
-.rmit/corpus/
+# CLI build output (timestamped runs)
+.rmit/dataset/
 
 # Executables
 *.swf
