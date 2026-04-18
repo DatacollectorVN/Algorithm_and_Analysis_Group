@@ -14,6 +14,7 @@ from services.helper import (
     weighted_sq_dist_query_to_box,
 )
 from services.search.distance import weighted_squared_distance
+from services.dto import TopKResult
 from services.search.strategies.base import SearchStrategy
 from services.search.topk import TopKManager
 
@@ -112,4 +113,8 @@ class KDTreeSearcher(SearchStrategy):
             raise ValidationError("KD-tree not built")
         mgr = TopKManager()
         _search_knn(self._root, query_vector, weights, k, mgr)
-        return mgr.finalize()
+        profile_ids, distances = [], []
+        for pid, dist in mgr.finalize():
+            profile_ids.append(pid)
+            distances.append(dist)
+        return TopKResult(profile_ids=tuple(profile_ids), distances=tuple(distances))
