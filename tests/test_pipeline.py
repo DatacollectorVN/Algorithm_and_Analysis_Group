@@ -8,12 +8,12 @@ from services.dto import Profile
 from services.helper import ValidationError
 
 
-def _make_raw(domain: str = "software", degree: str = "bachelor") -> Profile:
+def _make_raw(domain: str = "ai", degree: str = "bachelor") -> Profile:
     return Profile(1, 30.0, 50.0, 4.0, degree, domain)
 
 
 def _prevec_14() -> tuple[float, ...]:
-    """A representative 14-float pre-vector (bachelor / software)."""
+    """A representative 9-float pre-vector (bachelor / ai)."""
     return Corpuses.raw_to_prevector(_make_raw())
 
 
@@ -41,8 +41,8 @@ class TestPipeline(unittest.TestCase):
             self.assertTrue(18 <= p.age <= 70)
             self.assertGreaterEqual(p.monthly_income, 5.0)
             self.assertLessEqual(p.monthly_income, 100.0)
-            self.assertGreaterEqual(p.daily_learning_hours, 0.0)
-            self.assertLessEqual(p.daily_learning_hours, 8.0)
+            self.assertGreaterEqual(p.self_learning_hours, 0.0)
+            self.assertLessEqual(p.self_learning_hours, 4.0)
 
     def test_empty_corpus_rejected(self) -> None:
         with self.assertRaises(ValidationError):
@@ -53,10 +53,10 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(len(pre), VECTOR_DIM)
 
     def test_raw_to_prevector_domain_bits(self) -> None:
-        pre = Corpuses.raw_to_prevector(_make_raw(domain="software"))
+        pre = Corpuses.raw_to_prevector(_make_raw(domain="ai"))
         domain_bits = pre[4:]
         self.assertEqual(len(domain_bits), len(DOMAIN_CATALOG))
-        self.assertEqual(domain_bits[0], 1.0)  # software is index 0
+        self.assertEqual(domain_bits[0], 1.0)  # ai is index 0
         self.assertEqual(sum(domain_bits), 1.0)
 
     def test_raw_to_prevector_single_profile_normalizes_to_zero_numeric(self) -> None:
@@ -113,13 +113,13 @@ class TestOneHotEncoding(unittest.TestCase):
         # All profiles share the same domain — one-hot bits must stay 1.0/0.0
         raws = [
             Profile(200 + i, float(20 + i), float(40 + i), float(2 + i % 3),
-                       "bachelor", "software")
+                       "bachelor", "ai")
             for i in range(5)
         ]
         corpus = Corpuses.from_raw(raws)
         for np in corpus.vectorized_profiles:
             domain_bits = np.vector[4:]
-            self.assertEqual(domain_bits[0], 1.0)  # software
+            self.assertEqual(domain_bits[0], 1.0)  # ai
             self.assertTrue(all(v == 0.0 for v in domain_bits[1:]))
 
     def test_query_normalization_domain_aligned(self) -> None:

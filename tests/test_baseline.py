@@ -54,8 +54,8 @@ class TestBaseline(unittest.TestCase):
 
     def test_from_raw_pipeline(self) -> None:
         raw = [
-            Profile(101, 20.0, 10.0, 1.0, "bachelor", "software"),
-            Profile(102, 40.0, 20.0, 2.0, "master", "finance"),
+            Profile(101, 20.0, 10.0, 1.0, "bachelor", "ai"),
+            Profile(102, 40.0, 20.0, 2.0, "master", "data_science"),
         ]
         corpuses = Corpuses.from_raw(raw)
         s = BaselineSearcher(corpuses)

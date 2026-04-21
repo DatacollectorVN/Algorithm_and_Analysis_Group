@@ -72,16 +72,16 @@ class Corpuses:
 
     @staticmethod
     def raw_to_prevector(raw: Profile | QProfile) -> tuple[float, ...]:
-        """Encode a raw profile to 14 numeric features before Min–Max scaling.
+        """Encode a raw profile to 9 numeric features before Min–Max scaling.
 
-        Layout: ``(age, income, degree_rank, learning_hours, d0, d1, …, d9)``
-        where ``d0``–``d9`` are one-hot bits for ``favourite_domain``.
+        Layout: ``(age, income, degree_rank, self_learning_hours, d0, d1, …, d4)``
+        where ``d0``–``d4`` are one-hot bits for ``favourite_domain``.
 
         Args:
             raw: Corpus :class:`Profile` or query :class:`QProfile` (no ``profile_id`` required).
 
         Returns:
-            14-float tuple with numeric features followed by domain one-hot bits.
+            9-float tuple with numeric features followed by domain one-hot bits.
 
         Raises:
             ValidationError: If a categorical field is not in its catalog.
@@ -90,7 +90,7 @@ class Corpuses:
             float(raw.age),
             float(raw.monthly_income),
             Corpuses.degree_to_rank(raw.highest_degree),
-            float(raw.daily_learning_hours),
+            float(raw.self_learning_hours),
             *Corpuses.domain_to_onehot(raw.favourite_domain),
         )
 
@@ -101,16 +101,16 @@ class Corpuses:
     ) -> tuple[float, ...]:
         """Min–Max scale the numeric dimensions of a pre-vector.
 
-        Indices 0–3 (age, income, degree_rank, learning_hours) are scaled with
+        Indices 0–3 (age, income, degree_rank, self_learning_hours) are scaled with
         ``minmax_scalar``. Indices 4 onward (one-hot domain bits) are copied
         through unchanged because they are already bounded to ``{0.0, 1.0}``.
 
         Args:
-            pre: 14-float feature tuple before scaling.
+            pre: 9-float feature tuple before scaling.
             stats: Per-dimension min and max from :meth:`compute_scaling_stats`.
 
         Returns:
-            14-float scaled tuple.
+            9-float scaled tuple.
         """
         numeric = tuple(
             minmax_scalar(pre[i], stats.mins[i], stats.maxs[i]) for i in range(4)
@@ -125,10 +125,10 @@ class Corpuses:
         """Compute per-dimension min and max over pre-vectors.
 
         Args:
-            pre_vectors: Non-empty sequence of 14-float rows.
+            pre_vectors: Non-empty sequence of 9-float rows.
 
         Returns:
-            Bundled min/max tuples (14 dimensions).
+            Bundled min/max tuples (9 dimensions).
 
         Raises:
             ValidationError: If ``pre_vectors`` is empty.
@@ -171,7 +171,7 @@ class Corpuses:
                 profile_id=i + 1,
                 age=float(rng.randint(18, 70)),
                 monthly_income=rng.uniform(5.0, 100.0),
-                daily_learning_hours=rng.uniform(0.0, 8.0),
+                self_learning_hours=rng.uniform(0.0, 4.0),
                 highest_degree=rng.choice(cls.DEGREE_CATALOG),
                 favourite_domain=rng.choice(cls.DOMAIN_CATALOG),
             )
@@ -213,7 +213,7 @@ class Corpuses:
             stats: Scaling bounds from the corpus (e.g. ``corpuses.stats``).
 
         Returns:
-            14-dimensional normalized query vector.
+            9-dimensional normalized query vector.
 
         Raises:
             ValidationError: If encoding fails for ``raw``.

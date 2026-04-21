@@ -2,17 +2,16 @@
   "profile": {
     "age": 30,
     "monthly_income": 55.0,
-    "daily_learning_hours": 3.0,
+    "self_learning_hours": 3.0,
     "highest_degree": "master",
-    "favourite_domain": "healthcare"
+    "favourite_domain": "data_science"
   },
   "weights": {
     "age": 0.5,
     "monthly_income": 1.0,
     "highest_degree": 5,
-    "daily_learning_hours": 1.0,
+    "self_learning_hours": 1.0,
     "domain": 1.0
   },
   "k": 5
 }
-  

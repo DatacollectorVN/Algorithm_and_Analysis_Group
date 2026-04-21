@@ -1,6 +1,5 @@
 import argparse
 import logging
-import sys
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path

@@ -45,7 +45,7 @@ _CORPUS_KEYS = frozenset(
         "profile_id",
         "age",
         "monthly_income",
-        "daily_learning_hours",
+        "self_learning_hours",
         "highest_degree",
         "favourite_domain",
     }
@@ -131,17 +131,17 @@ def _sample_corpus_and_query() -> tuple[list[dict], dict]:
             "profile_id": 1,
             "age": 22,
             "monthly_income": 40.0,
-            "daily_learning_hours": 2.5,
+            "self_learning_hours": 2.5,
             "highest_degree": "bachelor",
-            "favourite_domain": "software",
+            "favourite_domain": "software_engineering",
         },
         {
             "profile_id": 2,
             "age": 35,
             "monthly_income": 50.0,
-            "daily_learning_hours": 3.0,
+            "self_learning_hours": 3.0,
             "highest_degree": "master",
-            "favourite_domain": "finance",
+            "favourite_domain": "data_science",
         },
     ]
     query = {
@@ -149,25 +149,20 @@ def _sample_corpus_and_query() -> tuple[list[dict], dict]:
             "profile_id": 9,
             "age": 30,
             "monthly_income": 55.0,
-            "daily_learning_hours": 3.0,
+            "self_learning_hours": 3.0,
             "highest_degree": "master",
-            "favourite_domain": "finance",
+            "favourite_domain": "data_science",
         },
         "weights": {
             "age": 1.0,
             "monthly_income": 1.0,
             "highest_degree": 0.5,
-            "daily_learning_hours": 1.0,
-            "domain_software": 1.0,
+            "self_learning_hours": 1.0,
+            "domain_ai": 1.0,
+            "domain_software_engineering": 1.0,
             "domain_data_science": 1.0,
-            "domain_finance": 1.0,
-            "domain_healthcare": 1.0,
-            "domain_education": 1.0,
-            "domain_manufacturing": 1.0,
-            "domain_retail": 1.0,
-            "domain_research": 1.0,
-            "domain_design": 1.0,
-            "domain_operations": 1.0,
+            "domain_cybersecurity": 1.0,
+            "domain_business_analytics": 1.0,
         },
         "k": 2,
     }
@@ -199,8 +194,8 @@ class TestMainSearch(unittest.TestCase):
             self.assertEqual(rc, 0)
             out = json.loads(buf.getvalue().strip())
             self.assertEqual(out["strategy"], "baseline")
-            self.assertIn("hits", out)
-            self.assertEqual(len(out["hits"]), 2)
+            self.assertIn("profiles", out)
+            self.assertEqual(len(out["profiles"]), 2)
 
     def test_search_benchmark_includes_timing(self) -> None:
         corpus, query = _sample_corpus_and_query()
@@ -250,7 +245,7 @@ class TestMainSearch(unittest.TestCase):
             self.assertEqual(rc, 0)
             out = json.loads(buf.getvalue().strip())
             self.assertEqual(out["strategy"], "kdtree")
-            self.assertEqual(len(out["hits"]), 2)
+            self.assertEqual(len(out["profiles"]), 2)
 
 
 class TestMainEndToEnd(unittest.TestCase):
@@ -287,7 +282,7 @@ class TestMainEndToEnd(unittest.TestCase):
                 os.chdir(prev)
             self.assertEqual(rc_search, 0)
             out = json.loads(buf.getvalue().strip())
-            self.assertEqual(len(out["hits"]), 2)
+            self.assertEqual(len(out["profiles"]), 2)
 
 
 class TestMainUsage(unittest.TestCase):

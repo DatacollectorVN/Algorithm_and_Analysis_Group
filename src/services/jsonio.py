@@ -67,7 +67,7 @@ def _weights_tuple(wobj: dict[str, Any], profile: Profile | QProfile) -> tuple[f
     age = _float_weight(wobj["age"], key="age")
     income = _float_weight(wobj["monthly_income"], key="monthly_income")
     deg_w = _degree_weight(wobj)
-    hours = _float_weight(wobj["daily_learning_hours"], key="daily_learning_hours")
+    hours = _float_weight(wobj["self_learning_hours"], key="self_learning_hours")
 
     domain_keys = _domain_weight_keys()
     explicit = [k for k in domain_keys if k in wobj]
