@@ -11,19 +11,23 @@
 
 ### 1. Environment setup
 
-**Requirements**: Python 3.12+ only — no third-party packages needed.
+**Requirements**: Python 3.12+ only — no third-party packages needed to **run** the app.
 
 ```bash
-# Optional: install dev tools (for running tests and linting only)
+# Optional: only needed if you want to run tests or linting
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install pytest pytest-cov ruff
 ```
+
+> **To run the app**: no virtual environment needed — just Python 3.12+.
 
 ### 2. Interactive demo menu (recommended for demos)
 
 Run `main.py` with **no arguments** to launch a numbered menu — no flags needed:
 
 ```bash
-PYTHONPATH=src python src/main.py
+PYTHONPATH=src python3 src/main.py
 ```
 
 ```
@@ -42,23 +46,22 @@ Enter option [1-5]:
 The menu handles dataset generation, caching, and query execution automatically.  
 Pass arguments as usual to skip the menu and run subcommands directly (see below).
 
-> **KD-tree index persistence**: selecting **Option 1 (Generate dataset)** automatically
-> builds the KD-tree index and saves it as `kdtree.pkl` alongside `profiles.json`.
-> All subsequent **Option 3 (KD-tree search)** and **Option 4 (Benchmark)** runs load
-> the pre-built index from disk — paying only the O(log n) query cost, not the
-> O(n log n) build cost.
+> **Index persistence**: **Option 4 (Benchmark)** builds both `baseline.pkl` and `kdtree.pkl`
+> on the first run and saves them alongside `profiles.json`. The second run loads
+> both from disk — showing pure query-time comparison.
+> Options 2 & 3 always build fresh — they are independent search demos.
 
 ### 3. Generate a dataset
 
 ```bash
-PYTHONPATH=src python src/main.py build --n 100000 --seed 42
+PYTHONPATH=src python3 src/main.py build --n 100000 --seed 42
 # Prints the output path, e.g.: .rmit/dataset/20260421_164200/profiles.json
 ```
 
 ### 4. Run a search query
 
 ```bash
-PYTHONPATH=src python src/main.py search \
+PYTHONPATH=src python3 src/main.py search \
   --dataset .rmit/dataset/<timestamp>/profiles.json \
   --query-profile samples/test.json \
   --strategy kdtree
@@ -67,7 +70,7 @@ PYTHONPATH=src python src/main.py search \
 Results are printed as JSON to stderr. To capture them:
 
 ```bash
-PYTHONPATH=src python src/main.py search \
+PYTHONPATH=src python3 src/main.py search \
   --dataset .rmit/dataset/<timestamp>/profiles.json \
   --query-profile samples/test.json \
   --strategy kdtree 2>&1 >/dev/null
@@ -76,6 +79,7 @@ PYTHONPATH=src python src/main.py search \
 ### 5. Input format
 
 **Query file** (`samples/test.json`):
+
 ```json
 {
   "profile": {
@@ -108,10 +112,67 @@ PYTHONPATH=src python src/main.py search \
 
 Add `--benchmark` to include timing: `"timing": { "build_seconds": ..., "search_seconds": ... }`.
 
-> **Note**: When using the interactive menu (Option 4), the benchmark for KD-tree shows
-> `build_seconds: 0.000` when the index was loaded from a pre-built `kdtree.pkl` file.
-> This reflects the amortized reality: the O(n log n) build cost was paid once at
-> dataset generation time and is not repeated per query.
+> **Note**: When using the interactive menu (Option 4), the benchmark shows `build_seconds: 0.000`
+> for both strategies on the second run because both indexes are loaded from pre-built pkl files.
+> The first run always builds fresh to give a fair, accurate comparison.
+
+---
+
+## Data Flow
+
+### Flow A — Dataset generation (`build` command / Option 1)
+
+```
+User: python3 src/main.py build --n 100000 --seed 42
+  └─► main.py
+        └─► runner.run_generate_corpus()
+              └─► dataset.py  generates 100,000 synthetic profiles
+                    Each profile: age, monthly_income, self_learning_hours,
+                                  highest_degree, favourite_domain
+                    Output: .rmit/dataset/<timestamp>/profiles.json
+                            .rmit/dataset/<timestamp>/kdtree.pkl  (pre-built index)
+```
+
+### Flow B — Similarity search (`search` command / Options 2 & 3)
+
+```
+User: selects profile + k (menu) OR passes --query-profile <file>
+  └─► menu.py / main.py
+        └─► runner.run_search()
+              └─► jsonio.py  loads corpus + query JSON
+                    │  Normalization + one-hot encoding → 9-dim vectors
+                    │    dims 0-3 : age, monthly_income, degree_rank,
+                    │               self_learning_hours  (Min-Max → [0,1])
+                    │    dims 4-8 : domain one-hot bits
+                    │               (ai / software_engineering / data_science /
+                    │                cybersecurity / business_analytics)
+                    │
+                    ├─► Baseline strategy
+                    │     Linear O(n) scan of all 100,000 profiles
+                    │     MinHeap(k) accumulates top-k  → O(n log k) total
+                    │
+                    └─► KD-tree strategy
+                          9-dim KD-tree with AABB pruning → O(log n) avg query
+                          MinHeap(k) for result accumulation
+                          (index loaded from kdtree.pkl when available)
+
+Returns: top-k profiles + distances as JSON
+```
+
+### Flow C — Benchmark (Option 4)
+
+```
+First run per session
+  ├─► Baseline  built fresh → real build time logged
+  └─► KD-tree   built fresh → real build time logged
+      Both indexes saved as baseline.pkl / kdtree.pkl
+
+Second run (indexes already on disk)
+  ├─► Baseline  loaded from pkl → build time = 0 ms
+  └─► KD-tree   loaded from pkl → build time = 0 ms
+
+Output: side-by-side timing table + speedup ratio
+```
 
 ---
 
@@ -139,13 +200,13 @@ Top-k candidates are maintained using a **min-heap** (`MinHeapStorage`) — O(lo
 ### `build` — generate a synthetic dataset
 
 ```bash
-python src/main.py build --n <count> [--seed <int>]
+python3 src/main.py build --n <count> [--seed <int>]
 ```
 
-| Flag     | Required | Description                              |
-| -------- | -------- | ---------------------------------------- |
+| Flag     | Required | Description                                    |
+| -------- | -------- | ---------------------------------------------- |
 | `--n`    | yes      | Number of synthetic profiles to generate (≥ 1) |
-| `--seed` | no       | RNG seed for reproducibility             |
+| `--seed` | no       | RNG seed for reproducibility                   |
 
 Writes `profiles.json`, `metadata.txt`, and **`kdtree.pkl`** to `.rmit/dataset/<YYYYMMDD_HHMMSS>/`.
 The KD-tree pickle is built immediately after dataset generation and reused for all subsequent
@@ -156,7 +217,7 @@ interactive searches and benchmarks. The full path is printed to stderr.
 ### `search` — find the k nearest profiles
 
 ```bash
-python src/main.py search \
+python3 src/main.py search \
   --dataset <profiles.json> \
   --query-profile <query.json> \
   [--strategy baseline|kdtree] \
@@ -173,7 +234,7 @@ python src/main.py search \
 Results are emitted as JSON on stderr:
 
 ```bash
-PYTHONPATH=src python src/main.py search \
+PYTHONPATH=src python3 src/main.py search \
   --dataset profiles.json --query-profile samples/test.json 2>&1 >/dev/null
 ```
 
@@ -255,13 +316,13 @@ With `--benchmark`: `"timing": { "build_seconds": 0.002, "search_seconds": 0.005
 
 ## Feature encoding
 
-| Index | Field                  | Encoding                                    |
-| ----- | ---------------------- | ------------------------------------------- |
-| 0     | `age`                  | Min-Max to [0, 1]                           |
-| 1     | `monthly_income`       | Min-Max to [0, 1]                           |
-| 2     | `highest_degree`       | Ordinal rank 0–3, then Min-Max to [0, 1]    |
-| 3     | `self_learning_hours`  | Min-Max to [0, 1]                           |
-| 4–8   | `favourite_domain`     | One-hot (5 bits)                            |
+| Index | Field                 | Encoding                                 |
+| ----- | --------------------- | ---------------------------------------- |
+| 0     | `age`                 | Min-Max to [0, 1]                        |
+| 1     | `monthly_income`      | Min-Max to [0, 1]                        |
+| 2     | `highest_degree`      | Ordinal rank 0–3, then Min-Max to [0, 1] |
+| 3     | `self_learning_hours` | Min-Max to [0, 1]                        |
+| 4–8   | `favourite_domain`    | One-hot (5 bits)                         |
 
 Normalization stats are computed from the corpus and applied to both corpus and query vectors.
 
@@ -322,7 +383,7 @@ flowchart TB
 | `services/search/topk.py`                | `TopKManager` backed by `MinHeapStorage`                                            |
 | `services/search/distance.py`            | `weighted_squared_distance`                                                         |
 | `services/search/strategies/baseline.py` | `BaselineSearcher` — O(n) exhaustive scan                                           |
-| `services/search/strategies/kdtree.py`   | `KDTreeSearcher` — 9-d KD-tree with AABB pruning                                   |
+| `services/search/strategies/kdtree.py`   | `KDTreeSearcher` — 9-d KD-tree with AABB pruning                                    |
 
 ---
 
@@ -365,7 +426,7 @@ flowchart TB
 ## Makefile targets
 
 ```bash
-make install   # pip install pytest pytest-cov ruff
+make install   # pip3 install pytest pytest-cov ruff
 make test      # PYTHONPATH=src pytest
 make lint      # ruff check src
 make format    # ruff format src
