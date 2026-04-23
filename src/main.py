@@ -6,12 +6,15 @@
   (no dataset JSON on stdout).
 - ``search``: ``--dataset``, ``--query-profile``, optional ``--strategy``, ``--benchmark``.
 
+Run with no arguments to launch the interactive demo menu (see :mod:`menu`).
+
 Imports assume ``PYTHONPATH`` includes the ``src`` directory (no runtime ``sys.path`` mutation).
 """
 
 from __future__ import annotations
 
 import logging
+import sys
 
 from services.args import build_parser
 from services.runner import run_generate_corpus, run_search
@@ -21,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(argv: list[str] | None = None) -> int:
-    """Parse argv, dispatch subcommand; ``search`` prints JSON; ``build`` writes files and paths."""
+    """Parse *argv*, dispatch subcommand; ``search`` prints JSON; ``build`` writes files."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -33,4 +36,13 @@ def run(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(run())
+    from menu import interactive_menu
+
+    if len(sys.argv) == 1:
+        try:
+            interactive_menu()
+        except KeyboardInterrupt:
+            print("\nGoodbye!")
+    else:
+        raise SystemExit(run())
+

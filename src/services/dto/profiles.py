@@ -17,7 +17,7 @@ class Profile:
     profile_id: int
     age: float
     monthly_income: float
-    daily_learning_hours: float
+    self_learning_hours: float
     highest_degree: str
     favourite_domain: str
 
@@ -35,7 +35,7 @@ class Profile:
             profile_id=int(item["profile_id"]),
             age=float(item["age"]),
             monthly_income=float(item["monthly_income"]),
-            daily_learning_hours=float(item["daily_learning_hours"]),
+            self_learning_hours=float(item["self_learning_hours"]),
             highest_degree=str(item["highest_degree"]),
             favourite_domain=str(item["favourite_domain"]),
         )
@@ -45,7 +45,7 @@ class QProfile:
     """The Query field in the query JSON."""
     age: float
     monthly_income: float
-    daily_learning_hours: float
+    self_learning_hours: float
     highest_degree: str
     favourite_domain: str
 
@@ -62,7 +62,7 @@ class QProfile:
         return cls(
             age=float(item["age"]),
             monthly_income=float(item["monthly_income"]),
-            daily_learning_hours=float(item["daily_learning_hours"]),
+            self_learning_hours=float(item["self_learning_hours"]),
             highest_degree=str(item["highest_degree"]),
             favourite_domain=str(item["favourite_domain"]),
         )
@@ -79,7 +79,7 @@ class QueryProfile:
     k: int
 
     def weights_dict(self) -> dict[str, Any]:
-        """Mutable view of weight entries for downstream resolution to a 14-tuple."""
+        """Mutable view of weight entries for downstream resolution to a 9-tuple."""
         return dict(self.weights)
 
     @staticmethod
@@ -95,8 +95,8 @@ class QueryProfile:
         if not isinstance(wobj, dict):
             raise ValidationError("weights must be an object")
         k = int(doc["k"])
-        if k < 1:
-            raise ValidationError("k must be at least 1")
+        if k < 1 or k > 20:
+            raise ValidationError("k must be between 1 and 20")
         profile = QProfile.init_from_json(doc["profile"], label="profile")
         if profile.highest_degree not in DEGREE_CATALOG:
             raise ValidationError(f"profile.highest_degree not in catalog: {profile.highest_degree!r}")
@@ -108,12 +108,12 @@ class QueryProfile:
 
 @dataclass(frozen=True, slots=True)
 class VectorizedProfile:
-    """Corpus point in [0, 1]^14 after Min–Max scaling and one-hot encoding.
+    """Corpus point in [0, 1]^9 after Min–Max scaling and one-hot encoding.
 
     The vector layout is:
-    [age, monthly_income, degree_rank, daily_learning_hours,
-     domain_0, domain_1, …, domain_9]
-    where degree_rank is an ordinal encoding and the ten domain dimensions
+    [age, monthly_income, degree_rank, self_learning_hours,
+     domain_0, domain_1, …, domain_4]
+    where degree_rank is an ordinal encoding and the five domain dimensions
     are one-hot bits (exactly one 1.0, the rest 0.0).
     """
 
@@ -131,10 +131,10 @@ class VectorizedQueryProfile:
 
 @dataclass(frozen=True, slots=True)
 class ScalingStats:
-    """Per-dimension Min–Max parameters from a corpus (14 dimensions).
+    """Per-dimension Min–Max parameters from a corpus (9 dimensions).
 
     Indices 0–3 hold computed min/max for numeric features.
-    Indices 4–13 hold placeholder values (min=0.0, max=1.0) for
+    Indices 4–8 hold placeholder values (min=0.0, max=1.0) for
     one-hot domain bits, which are not Min–Max scaled.
     """
 
@@ -148,3 +148,19 @@ class TopKResult:
 
     profile_ids: tuple[int, ...]
     distances: tuple[float, ...]
+
+    def __len__(self) -> int:
+        return len(self.profile_ids)
+
+    def __getitem__(self, index: int) -> tuple[int, float]:
+        return (self.profile_ids[index], self.distances[index])
+
+    def __iter__(self):  # type: ignore[override]
+        return zip(self.profile_ids, self.distances)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, TopKResult):
+            return self.profile_ids == other.profile_ids and self.distances == other.distances
+        if isinstance(other, list):
+            return list(self) == other
+        return NotImplemented
