@@ -13,6 +13,7 @@ build/
 .coverage
 htmlcov/
 .ruff_cache/
+.vscode/
 
 # CLI build output (timestamped runs)
 .rmit/dataset/
