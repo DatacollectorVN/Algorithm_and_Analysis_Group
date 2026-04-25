@@ -23,7 +23,7 @@ _MENU = """
 ========================================
   Top-K Profile Similarity Search
 ========================================
-1. Generate dataset (100,000 profiles)
+1. Generate dataset (choose sample size)
 2. Search with Baseline strategy
 3. Search with KD-tree strategy
 4. Benchmark: Baseline vs KD-tree
@@ -400,8 +400,17 @@ def _action_generate() -> None:
         if answer != "y":
             print("Keeping existing dataset.")
             return
-    print("Generating 100,000 profiles …")
-    _run_build(n=100000, seed=42)
+    while True:
+        raw_n = input("Enter sample size (number of profiles) [default: 100000]: ").strip()
+        if raw_n == "":
+            n_profiles = 100000
+            break
+        if raw_n.isdigit() and int(raw_n) > 0:
+            n_profiles = int(raw_n)
+            break
+        print("  Please enter a positive integer (e.g., 100000).")
+    print(f"Generating {n_profiles:,} profiles …")
+    _run_build(n=n_profiles, seed=42)
     dataset = _find_latest_dataset()
     if dataset:
         print(f"Dataset ready: {dataset}")
