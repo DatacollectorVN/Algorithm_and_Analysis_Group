@@ -6,6 +6,7 @@ from services.dto import Profile, QueryProfile, ScalingStats, VectorizedProfile,
 from services.helper import LookalikeSearchError, ValidationError
 from services.jsonio import dump_json, load_corpus_json, load_query_json
 from services.runner import run_generate_corpus, run_search
+from services.menu import interactive_menu
 
 __all__ = [
     "LookalikeSearchError",
@@ -22,4 +23,5 @@ __all__ = [
     "build_parser",
     "run_generate_corpus",
     "run_search",
+    "interactive_menu",
 ]

@@ -16,8 +16,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from services.args import build_parser
-from services.runner import run_generate_corpus, run_search
+from services import build_parser, interactive_menu, run_generate_corpus, run_search
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,15 +28,13 @@ def run(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "build":
-        return run_generate_corpus(args)
+        return run_generate_corpus(args.n_profiles, args.seed)
     if args.command == "search":
-        return run_search(args)
+        return run_search(args.dataset, args.query_profile, args.strategy, args.benchmark)
     raise ValueError(f"unknown command: {args.command!r}")
 
 
 if __name__ == "__main__":
-    from menu import interactive_menu
-
     if len(sys.argv) == 1:
         try:
             interactive_menu()

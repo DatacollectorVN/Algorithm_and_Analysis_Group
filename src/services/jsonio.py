@@ -100,7 +100,7 @@ def _weights_tuple(wobj: dict[str, Any], profile: Profile | QProfile) -> tuple[f
             f"({domain_keys[0]!r} …) or a single 'domain' / numeric 'favourite_domain' weight"
         )
 
-    return (age, income, deg_w, hours, *domain_weights)
+    return (age, income, hours, deg_w, *domain_weights)
 
 
 def load_query_json(
@@ -109,7 +109,7 @@ def load_query_json(
     """Load query file: profile, weights, and k.
 
     The file is parsed into :class:`~services.dto.QueryProfile`, then weights are
-    resolved to a 14-float tuple in ``QUERY_WEIGHT_KEYS`` order.
+    resolved to a 9-float tuple in ``QUERY_WEIGHT_KEYS`` order.
 
     Args:
         path: UTF-8 JSON object with ``profile``, ``weights``, ``k``.

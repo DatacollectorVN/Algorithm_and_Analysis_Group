@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 # Feature dimensionality for profiles, weights, and KD-tree axes.
-# Layout: [age, monthly_income, degree_rank, self_learning_hours,
+# Layout: [age, monthly_income, self_learning_hours, degree_rank,
 #          domain_0, …, domain_4]  (4 numeric + 5 one-hot domain bits)
 VECTOR_DIM: Final[int] = 9
 
@@ -28,8 +28,8 @@ DOMAIN_CATALOG: Final[tuple[str, ...]] = (
 QUERY_WEIGHT_KEYS: Final[tuple[str, ...]] = (
     "age",
     "monthly_income",
-    "highest_degree",
     "self_learning_hours",
+    "highest_degree",
     "domain_ai",
     "domain_software_engineering",
     "domain_data_science",

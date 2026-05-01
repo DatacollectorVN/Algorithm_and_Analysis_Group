@@ -13,7 +13,6 @@ type ProfileVector = tuple[float, ...]
 @dataclass(frozen=True, slots=True)
 class Profile:
     """One raw user record before normalization."""
-
     profile_id: int
     age: float
     monthly_income: float
@@ -111,7 +110,7 @@ class VectorizedProfile:
     """Corpus point in [0, 1]^9 after Min–Max scaling and one-hot encoding.
 
     The vector layout is:
-    [age, monthly_income, degree_rank, self_learning_hours,
+    [age, monthly_income, self_learning_hours, degree_rank,
      domain_0, domain_1, …, domain_4]
     where degree_rank is an ordinal encoding and the five domain dimensions
     are one-hot bits (exactly one 1.0, the rest 0.0).
