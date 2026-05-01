@@ -14,8 +14,8 @@ from services.jsonio import load_corpus_json, load_query_json
 _WEIGHTS_9 = {
     "age": 1.0,
     "monthly_income": 1.0,
-    "highest_degree": 0.5,
     "self_learning_hours": 1.0,
+    "highest_degree": 0.5,
     "domain_ai": 1.0,
     "domain_software_engineering": 1.0,
     "domain_data_science": 1.0,

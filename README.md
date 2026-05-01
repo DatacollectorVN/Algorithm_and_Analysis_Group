@@ -141,8 +141,8 @@ User: selects profile + k (menu) OR passes --query-profile <file>
         └─► runner.run_search()
               └─► jsonio.py  loads corpus + query JSON
                     │  Normalization + one-hot encoding → 9-dim vectors
-                    │    dims 0-3 : age, monthly_income, degree_rank,
-                    │               self_learning_hours  (Min-Max → [0,1])
+                    │    dims 0-3 : age, monthly_income, self_learning_hours,
+                    │               degree_rank  (Min-Max → [0,1])
                     │    dims 4-8 : domain one-hot bits
                     │               (ai / software_engineering / data_science /
                     │                cybersecurity / business_analytics)
@@ -320,8 +320,8 @@ With `--benchmark`: `"timing": { "build_seconds": 0.002, "search_seconds": 0.005
 | ----- | --------------------- | ---------------------------------------- |
 | 0     | `age`                 | Min-Max to [0, 1]                        |
 | 1     | `monthly_income`      | Min-Max to [0, 1]                        |
-| 2     | `highest_degree`      | Ordinal rank 0–3, then Min-Max to [0, 1] |
-| 3     | `self_learning_hours` | Min-Max to [0, 1]                        |
+| 2     | `self_learning_hours` | Min-Max to [0, 1]                        |
+| 3     | `highest_degree`      | Ordinal rank 0–3, then Min-Max to [0, 1] |
 | 4–8   | `favourite_domain`    | One-hot (5 bits)                         |
 
 Normalization stats are computed from the corpus and applied to both corpus and query vectors.
@@ -342,7 +342,7 @@ flowchart TB
     dataset["dataset.py — Corpus, Min-Max, synthetic data"]
     jsonio["jsonio.py — corpus / query JSON"]
     dto["dto/ — Profile, VectorizedProfile, ScalingStats, TopKResult"]
-    storages["dto/storages.py — TopKDataStructure + MinHeapStorage"]
+    storages["search/storages.py — TopKDataStructure + MinHeapStorage"]
     helper["helper.py — geometry, distance bounds, exceptions"]
     constants["constants.py — VECTOR_DIM=9, catalogs, tolerances"]
     topk["search/topk.py — TopKManager (MinHeapStorage)"]
@@ -379,7 +379,7 @@ flowchart TB
 | `services/constants.py`                  | `VECTOR_DIM = 9`, degree/domain catalogs, tolerances                                |
 | `services/helper.py`                     | `minmax_scalar`, AABB geometry, `ValidationError`                                   |
 | `services/dto/profiles.py`               | Immutable dataclasses: `Profile`, `VectorizedProfile`, `ScalingStats`, `TopKResult` |
-| `services/dto/storages.py`               | `TopKDataStructure` ABC + `MinHeapStorage` implementation                           |
+| `services/search/storages.py`            | `TopKDataStructure` ABC + `MinHeapStorage` implementation                           |
 | `services/search/topk.py`                | `TopKManager` backed by `MinHeapStorage`                                            |
 | `services/search/distance.py`            | `weighted_squared_distance`                                                         |
 | `services/search/strategies/baseline.py` | `BaselineSearcher` — O(n) exhaustive scan                                           |

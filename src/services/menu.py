@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
-import io
 import json
 import logging
 import pickle
@@ -13,7 +11,7 @@ from pathlib import Path
 
 from services.dataset import Corpuses
 from services.runner import run_generate_corpus, run_search
-from services.search.strategies import KDTreeSearcher
+from services.search.strategies import BaselineSearcher, KDTreeSearcher, build_searcher, get_topk
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +24,7 @@ _MENU = """
 1. Generate dataset (choose sample size)
 2. Search with Baseline strategy
 3. Search with KD-tree strategy
-4. Benchmark: Baseline vs KD-tree
+4. Simple Benchmark: Baseline vs KD-tree
 5. Exit
 ========================================"""
 
@@ -85,16 +83,37 @@ _SAMPLE_PROFILES = [
 
 
 # ── dataset helpers ──────────────────────────────────────────────────────────
+def _metadata_dataset_n(metadata: str) -> int | None:
+    for raw_line in metadata.splitlines():
+        line = raw_line.strip()
+        if line.startswith("N="):
+            try:
+                return int(line[2:].strip())
+            except ValueError:
+                return None
+    return None
 
 
 def _find_latest_dataset() -> Path | None:
     if not _DATASET_ROOT.is_dir():
         return None
-    for folder in reversed(sorted(_DATASET_ROOT.iterdir())):
-        candidate = folder / "profiles.json"
-        if candidate.is_file():
-            return candidate
-    return None
+    folders = list(_DATASET_ROOT.iterdir())
+    if not folders:
+        return None
+
+    tar_folder: Path = max(folders, key=lambda x: x.stat().st_mtime)
+    dataset_path: Path = tar_folder / "profiles.json"
+    metadata_path: Path = tar_folder / "metadata.txt"
+    if metadata_path.is_file() and dataset_path.is_file():
+        metadata = metadata_path.read_text(encoding="utf-8")
+        n = _metadata_dataset_n(metadata)
+        if n is not None:
+            print(f"Target Dataset: {dataset_path.resolve()}\nDataset Size: {n}")
+            return dataset_path
+        else:
+            return None
+    else:
+        return None
 
 
 def _dataset_is_compatible(path: Path) -> bool:
@@ -115,7 +134,7 @@ def _ensure_dataset() -> Path | None:
         print("Existing dataset uses old field names — regenerating …")
     else:
         print("No dataset found. Generating 100,000 profiles …")
-    _run_build(n=100000, seed=42)
+    run_generate_corpus(100000, seed=42)
     dataset = _find_latest_dataset()
     if dataset:
         print(f"Dataset ready: {dataset}")
@@ -148,28 +167,6 @@ def _save_pkl(dataset_path: Path, strategy: str, searcher) -> None:
 
 def _kdtree_pkl_path(dataset_path: Path) -> Path:
     return _pkl_path(dataset_path, "kdtree")
-
-
-# ── thin CLI dispatch helpers (no import from main) ──────────────────────────
-
-
-def _run_build(n: int, seed: int | None) -> int:
-    """Call :func:`run_generate_corpus` directly with a synthetic namespace."""
-    args = argparse.Namespace(n_profiles=n, seed=seed)
-    return run_generate_corpus(args)
-
-
-def _run_search_cli(
-    dataset: Path, query_tmp: str, strategy: str, *, benchmark: bool = False
-) -> int:
-    """Call :func:`run_search` directly with a synthetic namespace."""
-    args = argparse.Namespace(
-        dataset=str(dataset),
-        query_profile=query_tmp,
-        strategy=strategy,
-        benchmark=benchmark,
-    )
-    return run_search(args)
 
 
 # ── user-input helpers ───────────────────────────────────────────────────────
@@ -286,7 +283,7 @@ def _do_search(strategy: str) -> None:
         json.dump(query_dict, tmp)
         tmp_path = tmp.name
     try:
-        _run_search_cli(dataset, tmp_path, strategy)
+        run_search(dataset, tmp_path, strategy)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -333,24 +330,11 @@ def _do_benchmark() -> None:
                 searcher.search(vq.vector, vq.weights, vq.k)
                 timings[strategy] = {"build_seconds": 0.0, "search_seconds": time.perf_counter() - t0}
             else:
-                # Fresh build via CLI — captures build+search timing
-                buf = io.StringIO()
-                handler = logging.StreamHandler(buf)
-                handler.setLevel(logging.INFO)
-                rlog = logging.getLogger("services.runner")
-                rlog.addHandler(handler)
+                searcher_cls = BaselineSearcher if strategy == "baseline" else KDTreeSearcher
+                built, build_elapsed = build_searcher(searcher_cls, corpuses)
+                _, search_elapsed = get_topk(built, vq.vector, vq.weights, vq.k)
+                timings[strategy] = {"build_seconds": build_elapsed, "search_seconds": search_elapsed}
                 try:
-                    _run_search_cli(dataset, tmp_path, strategy, benchmark=True)
-                finally:
-                    rlog.removeHandler(handler)
-                try:
-                    timings[strategy] = json.loads(buf.getvalue().strip()).get("timing", {})
-                except Exception:
-                    timings[strategy] = {}
-                # Save searcher for next run
-                try:
-                    from services.search.strategies import BaselineSearcher
-                    built = BaselineSearcher(corpuses) if strategy == "baseline" else KDTreeSearcher(corpuses)
                     _save_pkl(dataset, strategy, built)
                 except Exception as exc:
                     logger.warning("Could not save %s pkl: %s", strategy, exc)
@@ -410,11 +394,11 @@ def _action_generate() -> None:
             break
         print("  Please enter a positive integer (e.g., 100000).")
     print(f"Generating {n_profiles:,} profiles …")
-    _run_build(n=n_profiles, seed=42)
+    run_generate_corpus(n_profiles, seed=42)
     dataset = _find_latest_dataset()
     if dataset:
         print(f"Dataset ready: {dataset}")
-        print("  ℹ  Run Option 4 (Benchmark) to build and persist the KD-tree index.")
+        print("  ℹ  Run Option 4 (Simple Benchmark) to build and persist the KD-tree index.")
 
 
 def interactive_menu() -> None:
@@ -423,7 +407,7 @@ def interactive_menu() -> None:
         "1": ("Generate dataset", _action_generate),
         "2": ("Baseline search", lambda: _do_search("baseline")),
         "3": ("KD-tree search", lambda: _do_search("kdtree")),
-        "4": ("Benchmark", _do_benchmark),
+        "4": ("Simple Benchmark", _do_benchmark),
     }
     while True:
         print(_MENU)

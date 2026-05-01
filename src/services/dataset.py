@@ -74,7 +74,7 @@ class Corpuses:
     def raw_to_prevector(raw: Profile | QProfile) -> tuple[float, ...]:
         """Encode a raw profile to 9 numeric features before Min–Max scaling.
 
-        Layout: ``(age, income, degree_rank, self_learning_hours, d0, d1, …, d4)``
+        Layout: ``(age, income, self_learning_hours, degree_rank, d0, d1, …, d4)``
         where ``d0``–``d4`` are one-hot bits for ``favourite_domain``.
 
         Args:
@@ -89,8 +89,8 @@ class Corpuses:
         return (
             float(raw.age),
             float(raw.monthly_income),
-            Corpuses.degree_to_rank(raw.highest_degree),
             float(raw.self_learning_hours),
+            Corpuses.degree_to_rank(raw.highest_degree),
             *Corpuses.domain_to_onehot(raw.favourite_domain),
         )
 
@@ -101,7 +101,7 @@ class Corpuses:
     ) -> tuple[float, ...]:
         """Min–Max scale the numeric dimensions of a pre-vector.
 
-        Indices 0–3 (age, income, degree_rank, self_learning_hours) are scaled with
+        Indices 0–3 (age, income, self_learning_hours, degree_rank) are scaled with
         ``minmax_scalar``. Indices 4 onward (one-hot domain bits) are copied
         through unchanged because they are already bounded to ``{0.0, 1.0}``.
 
@@ -293,7 +293,7 @@ class Corpuses:
             raw: Query reference (:class:`Profile` or :class:`QProfile`).
 
         Returns:
-            Normalized 14-vector aligned to :attr:`stats`.
+            Normalized 9-vector aligned to :attr:`stats`.
         """
         return Corpuses.normalize_query_raw(raw, self.stats)
 
@@ -301,10 +301,18 @@ class Corpuses:
         """Get a raw profile by ``profile_id``."""
         return self.raw_profiles[profile_id - 1]
     
+    def get_vectorized_profile(self, profile_id: int) -> VectorizedProfile:
+        """Get a vectorized profile by ``profile_id``."""
+        return self.vectorized_profiles[profile_id - 1]
+    
     def get_profiles(self, profile_ids: Sequence[int]) -> tuple[Profile, ...]:
         """Get raw profiles by ``profile_ids``."""
         return tuple(self.raw_profiles[pid - 1] for pid in profile_ids)
-
+    
+    def get_vectorized_profiles(self, profile_ids: Sequence[int]) -> tuple[VectorizedProfile, ...]:
+        """Get vectorized profiles by ``profile_ids``."""
+        return tuple(self.vectorized_profiles[pid - 1] for pid in profile_ids)
+    
     def build_vectorized_query(self, query_path: str | Path) -> VectorizedQueryProfile:
         """Load query JSON and normalize the query profile using this corpus's stats.
 

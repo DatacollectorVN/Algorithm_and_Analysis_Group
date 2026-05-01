@@ -28,9 +28,9 @@ def run(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "build":
-        return run_generate_corpus(args)
+        return run_generate_corpus(args.n_profiles, args.seed)
     if args.command == "search":
-        return run_search(args)
+        return run_search(args.dataset, args.query_profile, args.strategy, args.benchmark)
     raise ValueError(f"unknown command: {args.command!r}")
 
 

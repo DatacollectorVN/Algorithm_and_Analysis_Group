@@ -1,4 +1,4 @@
-"""Custom min-heap data structure for streaming top-k selection."""
+"""Top-k storage data structures used by search algorithms."""
 
 from __future__ import annotations
 
