@@ -11,110 +11,203 @@
 
 ### 1. Environment setup
 
-**Requirements**: Python 3.12+ only — no third-party packages needed to **run** the app.
+**Requirements**: Python 3.12+ — no third-party packages needed to **run** the app.  
+A virtual environment is only required if you want to run **tests or linting**.
+
+Choose one of the three options below:
+
+---
+
+#### Option A — uv (recommended)
+
+[uv](https://docs.astral.sh/uv/) manages Python versions and virtual environments automatically.
 
 ```bash
-# Optional: only needed if you want to run tests or linting
-python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install pytest pytest-cov ruff
+# Install uv (once)
+curl -LsSf https://astral.sh/uv/install.sh | sh   # macOS / Linux
+# Windows (PowerShell): irm https://astral.sh/uv/install.ps1 | iex
+
+# Create a virtual environment with Python 3.12 and install dev dependencies
+uv sync --extra dev
 ```
 
-> **To run the app**: no virtual environment needed — just Python 3.12+.
-
-### 2. Interactive demo menu (recommended for demos)
-
-Run `main.py` with **no arguments** to launch a numbered menu — no flags needed:
+Activate the environment if you want to call tools directly:
 
 ```bash
-PYTHONPATH=src python3 src/main.py
+source .venv/bin/activate        # macOS / Linux
+.venv\Scripts\activate           # Windows
+```
+
+Or prefix every command with `uv run` to skip activation entirely:
+
+```bash
+uv run python src/main.py
+uv run pytest
+uv run ruff check src
+```
+
+---
+
+#### Option B — conda
+
+```bash
+# Create and activate an isolated environment with Python 3.12
+conda create -n topk-search python=3.12 -y
+conda activate topk-search
+
+# Install dev dependencies (tests + linting)
+pip install -e ".[dev]"
+```
+
+To deactivate later:
+
+```bash
+conda deactivate
+```
+
+---
+
+#### Option C — plain venv + pip
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+```
+
+---
+
+> **To run the app only**: no virtual environment needed — just Python 3.12+.
+
+### 2. Interactive demo menu
+
+Run `main.py` to launch the interactive menu:
+
+```bash
+# uv (no activation required)
+uv run python src/main.py
+
+# conda / venv (after activating the environment)
+python src/main.py
 ```
 
 ```
 ========================================
   Top-K Profile Similarity Search
 ========================================
-1. Generate dataset (100,000 profiles)
+1. Generate dataset (choose sample size)
 2. Search with Baseline strategy
 3. Search with KD-tree strategy
-4. Benchmark: Baseline vs KD-tree
-5. Exit
+4. Simple Benchmark: Baseline vs KD-tree
+5. Run All Cases Benchmark: Baseline vs KD-tree
+6. Exit
 ========================================
-Enter option [1-5]:
+Enter option [1-6]:
 ```
 
-The menu handles dataset generation, caching, and query execution automatically.  
-Pass arguments as usual to skip the menu and run subcommands directly (see below).
+---
 
-> **Index persistence**: **Option 4 (Benchmark)** builds both `baseline.pkl` and `kdtree.pkl`
-> on the first run and saves them alongside `profiles.json`. The second run loads
-> both from disk — showing pure query-time comparison.
-> Options 2 & 3 always build fresh — they are independent search demos.
+#### Option 1 — Generate dataset
 
-### 3. Generate a dataset
+Prompts for how many profiles to generate (default: 100,000).  
+If a dataset already exists you are asked whether to regenerate it.
 
-```bash
-PYTHONPATH=src python3 src/main.py build --n 100000 --seed 42
-# Prints the output path, e.g.: .rmit/dataset/20260421_164200/profiles.json
+```
+Enter sample size (number of profiles) [default: 100000]: 100000
+Generating 100,000 profiles …
+Dataset ready: .rmit/dataset/20260502_103000/profiles.json
 ```
 
-### 4. Run a search query
+---
 
-```bash
-PYTHONPATH=src python3 src/main.py search \
-  --dataset .rmit/dataset/<timestamp>/profiles.json \
-  --query-profile samples/test.json \
-  --strategy kdtree
+#### Options 2 & 3 — Search (Baseline / KD-tree)
+
+Both options follow the same flow:
+
+1. Auto-loads (or generates) the latest dataset.
+2. Prompts you to pick a **sample profile** or enter a **custom one**.
+3. Prompts for **k** (number of results, 1–20, default 5).
+4. Runs the chosen strategy and prints the top-k results as JSON.
+
+```
+Choose a sample profile:
+  1. Young AI enthusiast (age 22, bachelor)
+  2. Mid-career software engineer (age 35, master)
+  3. Data scientist (age 28, master)
+  4. Cybersecurity analyst (age 31, bachelor)
+  5. Senior business analyst (age 45, phd)
+  6. Custom (enter manually)
+  0. Cancel
+Select profile [0-6]: 3
+
+Enter k (number of results, 1–20) [default: 5]: 5
 ```
 
-Results are printed as JSON to stderr. To capture them:
+For **Custom**, you are guided through each field:
 
-```bash
-PYTHONPATH=src python3 src/main.py search \
-  --dataset .rmit/dataset/<timestamp>/profiles.json \
-  --query-profile samples/test.json \
-  --strategy kdtree 2>&1 >/dev/null
+```
+  --- Custom profile ---
+  age (18–70): 27
+  monthly_income in million VND (5–100): 40
+  self_learning_hours per day (0–4): 2
+  highest_degree:
+    1. high_school
+    2. bachelor
+    3. master
+    4. phd
+  Select [1-4]: 3
+  favourite_domain:
+    1. ai
+    2. software_engineering
+    3. data_science
+    4. cybersecurity
+    5. business_analytics
+  Select [1-5]: 3
 ```
 
-### 5. Input format
+---
 
-**Query file** (`samples/test.json`):
+#### Option 4 — Simple Benchmark
 
-```json
-{
-  "profile": {
-    "age": 30,
-    "monthly_income": 55.0,
-    "self_learning_hours": 3.0,
-    "highest_degree": "master",
-    "favourite_domain": "data_science"
-  },
-  "weights": {
-    "age": 0.5,
-    "monthly_income": 1.0,
-    "highest_degree": 5,
-    "self_learning_hours": 1.0,
-    "domain": 1.0
-  },
-  "k": 5
-}
+Picks a profile and k (same prompts as Options 2 & 3), then times both strategies side-by-side.
+
+- **First run** — builds both indexes from scratch for accurate timing; saves `baseline.pkl` and `kdtree.pkl` next to `profiles.json`.
+- **Subsequent runs** — loads both indexes from disk, so only query time is compared.
+
+```
+  First run — building both strategies fresh for accurate timing …
+
+  ==============================================================
+    BENCHMARK RESULTS
+  ==============================================================
+                                   Baseline (built fresh)   KD-tree (built fresh)
+    ------------------------------------------------------------
+    Build time  [O(1) vs O(n log n)]             0.000ms     523.417ms
+    Search time [O(n)  vs O(log n)]            143.200ms       0.821ms
+
+    KD-tree query is 174.4x faster than Baseline
+  ==============================================================
 ```
 
-### 6. Output format
+---
 
-```json
-{
-  "strategy": "kdtree",
-  "profiles": [{ "profile_id": 12, "age": 29.0, ... }],
-  "distances": [0.0123, 0.0456, ...]
-}
+#### Option 5 — Run All Cases Benchmark
+
+Prompts for comma-separated **dataset sizes** and **k values**, then runs a full matrix across four report sections:
+
+```
+  Dataset sizes  : 10000,100000
+  k values       : 5,10,20
 ```
 
-Add `--benchmark` to include timing: `"timing": { "build_seconds": ..., "search_seconds": ... }`.
+| Section | What it measures |
+| ------- | ---------------- |
+| 1 | Effect of dataset size (fixed k, uniform weights) |
+| 2 | Effect of k value (all sizes × all k values) |
+| 3 | Effect of attribute weights (4 weight scenarios) |
+| 4 | Correctness verification — KD-tree vs Baseline on every combination |
 
-> **Note**: When using the interactive menu (Option 4), the benchmark shows `build_seconds: 0.000`
-> for both strategies on the second run because both indexes are loaded from pre-built pkl files.
-> The first run always builds fresh to give a fair, accurate comparison.
+A summary table (Table 5) aggregates match rate, distance error, and average search time across all scenarios.
 
 ---
 
@@ -195,51 +288,6 @@ Top-k candidates are maintained using a **max-heap** (`MaxHeapStorage`) — O(lo
 
 ---
 
-## CLI reference
-
-### `build` — generate a synthetic dataset
-
-```bash
-python3 src/main.py build --n <count> [--seed <int>]
-```
-
-| Flag     | Required | Description                                    |
-| -------- | -------- | ---------------------------------------------- |
-| `--n`    | yes      | Number of synthetic profiles to generate (≥ 1) |
-| `--seed` | no       | RNG seed for reproducibility                   |
-
-Writes `profiles.json`, `metadata.txt`, and **`kdtree.pkl`** to `.rmit/dataset/<YYYYMMDD_HHMMSS>/`.
-The KD-tree pickle is built immediately after dataset generation and reused for all subsequent
-interactive searches and benchmarks. The full path is printed to stderr.
-
----
-
-### `search` — find the k nearest profiles
-
-```bash
-python3 src/main.py search \
-  --dataset <profiles.json> \
-  --query-profile <query.json> \
-  [--strategy baseline|kdtree] \
-  [--benchmark]
-```
-
-| Flag              | Required | Default    | Description                                    |
-| ----------------- | -------- | ---------- | ---------------------------------------------- |
-| `--dataset`       | yes      | —          | Path to corpus JSON                            |
-| `--query-profile` | yes      | —          | Path to query JSON (`profile`, `weights`, `k`) |
-| `--strategy`      | no       | `baseline` | `baseline` or `kdtree`                         |
-| `--benchmark`     | no       | off        | Include wall-clock timing in output            |
-
-Results are emitted as JSON on stderr:
-
-```bash
-PYTHONPATH=src python3 src/main.py search \
-  --dataset profiles.json --query-profile samples/test.json 2>&1 >/dev/null
-```
-
----
-
 ## JSON formats
 
 ### Corpus file
@@ -309,8 +357,6 @@ The `domain` weight applies to the one-hot slot matching `profile.favourite_doma
   "strategy": "baseline"
 }
 ```
-
-With `--benchmark`: `"timing": { "build_seconds": 0.002, "search_seconds": 0.005 }`.
 
 ---
 
@@ -431,3 +477,16 @@ make test      # PYTHONPATH=src pytest
 make lint      # ruff check src
 make format    # ruff format src
 ```
+
+If you set up the environment with **uv**, replace `make install` with `uv sync --extra dev`
+and prefix the remaining targets with `uv run`:
+
+```bash
+uv sync --extra dev          # install dev deps (replaces make install)
+uv run pytest                # run tests
+uv run ruff check src        # lint
+uv run ruff format src       # format
+```
+
+For **conda**, activate the environment first (`conda activate topk-search`), then use the
+`make` targets as normal.

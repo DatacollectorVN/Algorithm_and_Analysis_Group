@@ -29,7 +29,9 @@ class SearchStrategy(ABC):
         """
 
 
-def build_searcher(searcher_cls: type[SearchStrategy], corpuses: Corpuses) -> [SearchStrategy, float]:
+def build_searcher(
+    searcher_cls: type[SearchStrategy], corpuses: Corpuses
+) -> [SearchStrategy, float]:
     t0: float = time.perf_counter()
     instance: SearchStrategy = searcher_cls(corpuses)
     elapsed: float = time.perf_counter() - t0

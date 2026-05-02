@@ -40,5 +40,3 @@ class BaselineSearcher(SearchStrategy):
             profile_ids.append(id)
             distances.append(dist)
         return TopKResult(profile_ids=tuple(profile_ids), distances=tuple(distances))
-
-

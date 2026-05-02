@@ -1,45 +1,17 @@
 #!/usr/bin/env python3
-"""CLI entry: subcommands ``build`` and ``search`` (top-k similarity).
-
-- ``build``: required ``--n``, optional ``--seed`` → writes ``profiles.json`` and
-  ``metadata.txt`` under ``./.rmit/dataset/YYYYMMDD_HHMMSS/``; prints those absolute paths
-  (no dataset JSON on stdout).
-- ``search``: ``--dataset``, ``--query-profile``, optional ``--strategy``, ``--benchmark``.
-
-Run with no arguments to launch the interactive demo menu (see :mod:`menu`).
-
-Imports assume ``PYTHONPATH`` includes the ``src`` directory (no runtime ``sys.path`` mutation).
-"""
+"""Entry point — launches the interactive demo menu (see :mod:`menu`)."""
 
 from __future__ import annotations
 
 import logging
-import sys
 
-from services import build_parser, interactive_menu, run_generate_corpus, run_search
+from services import interactive_menu
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-
-def run(argv: list[str] | None = None) -> int:
-    """Parse *argv*, dispatch subcommand; ``search`` prints JSON; ``build`` writes files."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    if args.command == "build":
-        return run_generate_corpus(args.n_profiles, args.seed)
-    if args.command == "search":
-        return run_search(args.dataset, args.query_profile, args.strategy, args.benchmark)
-    raise ValueError(f"unknown command: {args.command!r}")
-
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+_log = logging.getLogger(__name__)
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        try:
-            interactive_menu()
-        except KeyboardInterrupt:
-            print("\nGoodbye!")
-    else:
-        raise SystemExit(run())
-
+    try:
+        interactive_menu()
+    except KeyboardInterrupt:
+        _log.info("\nGoodbye!")

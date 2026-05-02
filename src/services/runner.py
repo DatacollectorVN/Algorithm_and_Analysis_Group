@@ -56,7 +56,9 @@ def run_search(
         searcher: SearchStrategy
         searcher, build_elapsed = build_searcher(searcher_cls, corpuses)
         topk_result: TopKResult
-        topk_result, search_elapsed = get_topk(searcher, vectorized_query.vector, vectorized_query.weights, vectorized_query.k)
+        topk_result, search_elapsed = get_topk(
+            searcher, vectorized_query.vector, vectorized_query.weights, vectorized_query.k
+        )
         profiles: tuple[Profile, ...] = corpuses.get_profiles(topk_result.profile_ids)
         out: dict = {
             "strategy": strategy,

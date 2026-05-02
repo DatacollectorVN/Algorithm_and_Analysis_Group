@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import pickle
 import random
 import tempfile
 import time
 from pathlib import Path
 
-from services.constants import HITS_EQUAL_ABS_TOL
+from services.constants import HITS_EQUAL_ABS_TOL, QUERY_WEIGHT_KEYS
 from services.dataset import Corpuses
 from services.dto import QProfile, VectorizedQueryProfile
 from services.runner import run_generate_corpus, run_search
@@ -218,6 +219,66 @@ def _input_choice(prompt: str, options: tuple[str, ...]) -> str:
         print(f"  Please enter a number between 1 and {len(options)}.")
 
 
+def _input_non_negative_float(prompt: str) -> float:
+    while True:
+        raw = input(prompt).strip()
+        try:
+            v = float(raw)
+        except ValueError:
+            print("  Please enter a non-negative number.")
+            continue
+        if not math.isfinite(v) or v < 0.0:
+            print("  Weight must be a non-negative finite number.")
+            continue
+        return v
+
+
+def _default_interactive_search_weights() -> dict[str, float]:
+    """Default weights for preset sample profiles (search / simple benchmark)."""
+    return {
+        "age": 1.0,
+        "monthly_income": 1.0,
+        "highest_degree": 2.0,
+        "self_learning_hours": 1.0,
+        "domain": 3.0,
+    }
+
+
+def _uniform_query_weights() -> dict[str, float]:
+    """1.0 on every normalized dimension (``QUERY_WEIGHT_KEYS`` order)."""
+    return {k: 1.0 for k in QUERY_WEIGHT_KEYS}
+
+
+def _read_custom_property_weights() -> dict[str, float]:
+    while True:
+        print("\n  Enter a non-negative weight for each property:")
+        w = {
+            "age": _input_non_negative_float("    age: "),
+            "monthly_income": _input_non_negative_float("    monthly_income: "),
+            "self_learning_hours": _input_non_negative_float("    self_learning_hours: "),
+            "highest_degree": _input_non_negative_float("    highest_degree: "),
+            "domain": _input_non_negative_float(
+                "    favourite_domain (weight on your selected domain): "
+            ),
+        }
+        if any(v > 0.0 for v in w.values()):
+            return w
+        print("  At least one weight must be positive — try again.")
+
+
+def _prompt_weights_for_custom_profile() -> dict[str, float]:
+    """After a custom profile: uniform 1.0 on all dimensions, or five property weights."""
+    while True:
+        raw = input(
+            "  Use uniform weights (1.0 on every dimension)? [Y/n]: "
+        ).strip()
+        if raw == "" or raw.lower() == "y":
+            return _uniform_query_weights()
+        if raw in ("n", "N"):
+            return _read_custom_property_weights()
+        print("  Press Enter or Y for uniform, or N to set each property's weight.")
+
+
 def _input_int_list(prompt: str) -> list[int]:
     """Read a comma-separated list of positive integers from stdin.
 
@@ -275,7 +336,7 @@ def _build_custom_profile() -> dict:
     }
 
 
-def _pick_profile_and_k() -> tuple[dict, int] | None:
+def _pick_profile_and_k() -> tuple[dict, int, dict[str, float]] | None:
     n = len(_SAMPLE_PROFILES)
     print("\nChoose a sample profile:")
     for i, sp in enumerate(_SAMPLE_PROFILES, start=1):
@@ -288,10 +349,12 @@ def _pick_profile_and_k() -> tuple[dict, int] | None:
             return None
         if raw.isdigit() and int(raw) == n + 1:
             profile = _build_custom_profile()
+            weights = _prompt_weights_for_custom_profile()
             break
         if raw.isdigit() and 1 <= int(raw) <= n:
             chosen = _SAMPLE_PROFILES[int(raw) - 1]
             profile = chosen["profile"]
+            weights = _default_interactive_search_weights()
             print(f"\nSearching similar to: {chosen['label']}")
             break
         print(f"  Please enter a number between 0 and {n + 1}.")
@@ -304,21 +367,51 @@ def _pick_profile_and_k() -> tuple[dict, int] | None:
             k = int(raw_k)
             break
         print("  k must be an integer between 1 and 20.")
-    return profile, k
+    return profile, k, weights
 
 
-def _make_query_dict(profile: dict, k: int) -> dict:
+def _make_query_dict(profile: dict, k: int, weights: dict[str, float]) -> dict:
     return {
         "profile": profile,
-        "weights": {
-            "age": 1.0,
-            "monthly_income": 1.0,
-            "highest_degree": 2.0,
-            "self_learning_hours": 1.0,
-            "domain": 3.0,
-        },
+        "weights": weights,
         "k": k,
     }
+
+
+def _print_search_query_summary(query: dict) -> None:
+    """Print query profile, k, and weights before top-k JSON (menu search)."""
+    profile = query["profile"]
+    w = query["weights"]
+    k = query["k"]
+    print("\n  --- Search query (before top-k) ---")
+    print("  Profile:")
+    print(f"    age:                  {profile['age']}")
+    print(f"    monthly_income:       {profile['monthly_income']}")
+    print(f"    self_learning_hours:  {profile['self_learning_hours']}")
+    print(f"    highest_degree:       {profile['highest_degree']}")
+    print(f"    favourite_domain:     {profile['favourite_domain']}")
+    print(f"  k: {k}")
+    print("  Weights:")
+    if all(key in w for key in QUERY_WEIGHT_KEYS):
+        for key in QUERY_WEIGHT_KEYS:
+            print(f"    {key}: {w[key]}")
+    else:
+        order_labels: tuple[tuple[str, str], ...] = (
+            ("age", "age"),
+            ("monthly_income", "monthly_income"),
+            ("self_learning_hours", "self_learning_hours"),
+            ("highest_degree", "highest_degree"),
+            ("domain", "favourite_domain (domain axis)"),
+        )
+        seen: set[str] = set()
+        for json_key, label in order_labels:
+            if json_key in w:
+                print(f"    {label}: {w[json_key]}")
+                seen.add(json_key)
+        for key in sorted(w):
+            if key not in seen:
+                print(f"    {key}: {w[key]}")
+    print("  " + "-" * 40)
 
 
 # ── all-cases benchmark helpers ──────────────────────────────────────────────
@@ -431,10 +524,9 @@ def _run_case(
     ids_match = b_result.profile_ids == k_result.profile_ids
     paired = len(b_result.distances) == len(k_result.distances)
     dists_match = paired and all(
-        abs(bd - kd) <= HITS_EQUAL_ABS_TOL
-        for bd, kd in zip(b_result.distances, k_result.distances)
+        abs(bd - kd) <= HITS_EQUAL_ABS_TOL for bd, kd in zip(b_result.distances, k_result.distances)
     )
-    
+
     # A case is correct only when both methods return the same IDs and near-equal distances.
     correct = ids_match and dists_match
     speedup = (b_search / k_search) if k_search > 0.0 else float("inf")
@@ -491,7 +583,9 @@ def _print_all_cases_report(
     print(f"\n  --- Section 1: Effect of Dataset Size ---")
     print(f"  (k={first_k}, weights=Uniform, random query per size)")
     print()
-    print(f"  {'Size':>10}  {'B Build':>11}  {'KD Build':>11}  {'B Search':>11}  {'KD Search':>11}  {'Speedup':>9}")
+    print(
+        f"  {'Size':>10}  {'B Build':>11}  {'KD Build':>11}  {'B Search':>11}  {'KD Search':>11}  {'Speedup':>9}"
+    )
     print("  " + "-" * 68)
     for r in size_rows:
         print(
@@ -514,9 +608,13 @@ def _print_all_cases_report(
     fixed_profile_label = _SAMPLE_PROFILES[0]["label"]
     first_k_label = str(weight_rows[0]["k"]) if weight_rows else "?"
     print(f"\n  --- Section 3: Effect of Attribute Weights ---")
-    print(f"  (all dataset sizes x all weight scenarios, k={first_k_label}, fixed profile: \"{fixed_profile_label}\")")
+    print(
+        f'  (all dataset sizes x all weight scenarios, k={first_k_label}, fixed profile: "{fixed_profile_label}")'
+    )
     print()
-    print(f"  {'Size':>10}  {'Weight Scenario':<30}  {'B Search':>11}  {'KD Search':>11}  {'Speedup':>9}")
+    print(
+        f"  {'Size':>10}  {'Weight Scenario':<30}  {'B Search':>11}  {'KD Search':>11}  {'Speedup':>9}"
+    )
     print("  " + "-" * 79)
     for r in weight_rows:
         label = r["weight_label"][:30]
@@ -544,9 +642,15 @@ def _print_all_cases_report(
     def _aggregate(rows: list[dict]) -> dict:
         n = len(rows)
         if n == 0:
-            return {"total": 0, "matches": 0, "rate": 0.0,
-                    "max_dist_err": float("nan"), "avg_dist_err": float("nan"),
-                    "avg_b_search": 0.0, "avg_k_search": 0.0}
+            return {
+                "total": 0,
+                "matches": 0,
+                "rate": 0.0,
+                "max_dist_err": float("nan"),
+                "avg_dist_err": float("nan"),
+                "avg_b_search": 0.0,
+                "avg_k_search": 0.0,
+            }
         matches = sum(1 for r in rows if r["correct"])
         rate = 100.0 * matches / n
         _nan = float("nan")
@@ -556,9 +660,15 @@ def _print_all_cases_report(
         avg_err = sum(valid_avg) / len(valid_avg) if valid_avg else float("nan")
         avg_b = sum(r["b_search"] for r in rows) / n
         avg_k = sum(r["k_search"] for r in rows) / n
-        return {"total": n, "matches": matches, "rate": rate,
-                "max_dist_err": max_err, "avg_dist_err": avg_err,
-                "avg_b_search": avg_b, "avg_k_search": avg_k}
+        return {
+            "total": n,
+            "matches": matches,
+            "rate": rate,
+            "max_dist_err": max_err,
+            "avg_dist_err": avg_err,
+            "avg_b_search": avg_b,
+            "avg_k_search": avg_k,
+        }
 
     def _err_str(v: float) -> str:
         if v != v:  # NaN
@@ -567,7 +677,7 @@ def _print_all_cases_report(
 
     scenarios = [
         ("A — Dataset size", size_rows),
-        ("B — k value",      k_rows),
+        ("B — k value", k_rows),
         ("C — Weight config", weight_rows),
     ]
     print(f"\n  --- Table 5: Correctness Verification Summary (All Scenarios) ---")
@@ -594,8 +704,13 @@ def _print_all_cases_report(
         finite = [r["speedup"] for r in all_rows if r["speedup"] != float("inf")]
         if finite:
             avg = sum(finite) / len(finite)
-            best = max(all_rows, key=lambda r: r["speedup"] if r["speedup"] != float("inf") else -1.0)
-            worst = min(all_rows, key=lambda r: r["speedup"] if r["speedup"] != float("inf") else float("inf"))
+            best = max(
+                all_rows, key=lambda r: r["speedup"] if r["speedup"] != float("inf") else -1.0
+            )
+            worst = min(
+                all_rows,
+                key=lambda r: r["speedup"] if r["speedup"] != float("inf") else float("inf"),
+            )
             print(f"\n  Summary across all {total} cases:")
             print(f"    Average speedup : {avg:.2f}x")
             print(
@@ -622,8 +737,8 @@ def _do_search(strategy: str) -> None:
     if result is None:
         print("Cancelled.")
         return
-    profile, k = result
-    query_dict = _make_query_dict(profile, k)
+    profile, k, weights = result
+    query_dict = _make_query_dict(profile, k, weights)
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", delete=False, encoding="utf-8"
@@ -631,6 +746,7 @@ def _do_search(strategy: str) -> None:
         json.dump(query_dict, tmp)
         tmp_path = tmp.name
     try:
+        _print_search_query_summary(query_dict)
         run_search(dataset, tmp_path, strategy)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
@@ -645,8 +761,8 @@ def _do_benchmark() -> None:
     if result is None:
         print("Cancelled.")
         return
-    profile, k = result
-    query_dict = _make_query_dict(profile, k)
+    profile, k, weights = result
+    query_dict = _make_query_dict(profile, k, weights)
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", delete=False, encoding="utf-8"
@@ -676,12 +792,18 @@ def _do_benchmark() -> None:
                 from_pkl[strategy] = True
                 t0 = time.perf_counter()
                 searcher.search(vq.vector, vq.weights, vq.k)
-                timings[strategy] = {"build_seconds": 0.0, "search_seconds": time.perf_counter() - t0}
+                timings[strategy] = {
+                    "build_seconds": 0.0,
+                    "search_seconds": time.perf_counter() - t0,
+                }
             else:
                 searcher_cls = BaselineSearcher if strategy == "baseline" else KDTreeSearcher
                 built, build_elapsed = build_searcher(searcher_cls, corpuses)
                 _, search_elapsed = get_topk(built, vq.vector, vq.weights, vq.k)
-                timings[strategy] = {"build_seconds": build_elapsed, "search_seconds": search_elapsed}
+                timings[strategy] = {
+                    "build_seconds": build_elapsed,
+                    "search_seconds": search_elapsed,
+                }
                 try:
                     _save_pkl(dataset, strategy, built)
                 except Exception as exc:
@@ -698,9 +820,9 @@ def _do_benchmark() -> None:
     k_search = timings.get("kdtree", {}).get("search_seconds", 0.0)
 
     both_fresh = not from_pkl["baseline"] and not from_pkl["kdtree"]
-    both_pkl   = from_pkl["baseline"] and from_pkl["kdtree"]
+    both_pkl = from_pkl["baseline"] and from_pkl["kdtree"]
     b_label = "Baseline (pre-built)" if from_pkl["baseline"] else "Baseline (built fresh)"
-    k_label = "KD-tree (pre-built)"  if from_pkl["kdtree"]   else "KD-tree (built fresh)"
+    k_label = "KD-tree (pre-built)" if from_pkl["kdtree"] else "KD-tree (built fresh)"
 
     print("\n" + "=" * 62)
     print("  BENCHMARK RESULTS")
@@ -710,9 +832,13 @@ def _do_benchmark() -> None:
     elif both_pkl:
         print("  Both indexes loaded from pkl — comparing query time only")
     print(f"\n  {'':30s} {b_label:>20s}   {k_label}")
-    print(f"  {'-'*60}")
-    print(f"  {'Build time  [O(1) vs O(n log n)]':30s} {b_build * 1000:>19.3f}ms   {k_build * 1000:>9.3f}ms")
-    print(f"  {'Search time [O(n)  vs O(log n)] ':30s} {b_search * 1000:>19.3f}ms   {k_search * 1000:>9.3f}ms")
+    print(f"  {'-' * 60}")
+    print(
+        f"  {'Build time  [O(1) vs O(n log n)]':30s} {b_build * 1000:>19.3f}ms   {k_build * 1000:>9.3f}ms"
+    )
+    print(
+        f"  {'Search time [O(n)  vs O(log n)] ':30s} {b_search * 1000:>19.3f}ms   {k_search * 1000:>9.3f}ms"
+    )
     if b_search > 0 and k_search > 0:
         speedup = b_search / k_search
         print(f"\n  KD-tree query is {speedup:.1f}x faster than Baseline")
@@ -765,9 +891,7 @@ def _do_benchmark_all_cases() -> None:
         except Exception as exc:
             print(f"  Error building strategies for N={size:,}: {exc}")
             continue
-        print(
-            f"    Baseline: {b_build * 1000:.1f} ms  |  KD-tree: {k_build * 1000:.1f} ms"
-        )
+        print(f"    Baseline: {b_build * 1000:.1f} ms  |  KD-tree: {k_build * 1000:.1f} ms")
         built[size] = {
             "corpuses": corpuses,
             "baseline": b_searcher,
@@ -792,17 +916,23 @@ def _do_benchmark_all_cases() -> None:
         b = built[size]
         sp = rng.choice(_SAMPLE_PROFILES)
         rec = _run_case(
-            b["baseline"], b["kdtree"], b["corpuses"],
-            sp["profile"], uniform_weights, first_k,
+            b["baseline"],
+            b["kdtree"],
+            b["corpuses"],
+            sp["profile"],
+            uniform_weights,
+            first_k,
         )
-        size_rows.append({
-            "size": size,
-            "k": first_k,
-            "b_build": b["b_build"],
-            "k_build": b["k_build"],
-            "profile_label": sp["label"],
-            **rec,
-        })
+        size_rows.append(
+            {
+                "size": size,
+                "k": first_k,
+                "b_build": b["b_build"],
+                "k_build": b["k_build"],
+                "profile_label": sp["label"],
+                **rec,
+            }
+        )
 
     # ── Section 2: Effect of k value ─────────────────────────────────────────
     # All sizes × all k values; uniform weights; random profile per (size, k)
@@ -812,17 +942,23 @@ def _do_benchmark_all_cases() -> None:
         for kv in k_values:
             sp = rng.choice(_SAMPLE_PROFILES)
             rec = _run_case(
-                b["baseline"], b["kdtree"], b["corpuses"],
-                sp["profile"], uniform_weights, kv,
+                b["baseline"],
+                b["kdtree"],
+                b["corpuses"],
+                sp["profile"],
+                uniform_weights,
+                kv,
             )
-            k_rows.append({
-                "size": size,
-                "k": kv,
-                "b_build": b["b_build"],
-                "k_build": b["k_build"],
-                "profile_label": sp["label"],
-                **rec,
-            })
+            k_rows.append(
+                {
+                    "size": size,
+                    "k": kv,
+                    "b_build": b["b_build"],
+                    "k_build": b["k_build"],
+                    "profile_label": sp["label"],
+                    **rec,
+                }
+            )
 
     # ── Section 3: Effect of attribute weights ────────────────────────────────
     # All sizes × all weight scenarios; fixed k=first_k; fixed profile
@@ -831,17 +967,23 @@ def _do_benchmark_all_cases() -> None:
         b = built[size]
         for ws in _WEIGHT_SCENARIOS:
             rec = _run_case(
-                b["baseline"], b["kdtree"], b["corpuses"],
-                fixed_sp["profile"], ws["weights"], first_k,
+                b["baseline"],
+                b["kdtree"],
+                b["corpuses"],
+                fixed_sp["profile"],
+                ws["weights"],
+                first_k,
             )
-            weight_rows.append({
-                "size": size,
-                "k": first_k,
-                "weight_label": ws["label"],
-                "b_build": b["b_build"],
-                "k_build": b["k_build"],
-                **rec,
-            })
+            weight_rows.append(
+                {
+                    "size": size,
+                    "k": first_k,
+                    "weight_label": ws["label"],
+                    "b_build": b["b_build"],
+                    "k_build": b["k_build"],
+                    **rec,
+                }
+            )
 
     # ── All rows: every (size, k, weight, random profile) combination ─────────
     all_rows: list[dict] = []
@@ -851,16 +993,22 @@ def _do_benchmark_all_cases() -> None:
             for ws in _WEIGHT_SCENARIOS:
                 sp = rng.choice(_SAMPLE_PROFILES)
                 rec = _run_case(
-                    b["baseline"], b["kdtree"], b["corpuses"],
-                    sp["profile"], ws["weights"], kv,
+                    b["baseline"],
+                    b["kdtree"],
+                    b["corpuses"],
+                    sp["profile"],
+                    ws["weights"],
+                    kv,
                 )
-                all_rows.append({
-                    "size": size,
-                    "k": kv,
-                    "weight_label": ws["label"],
-                    "profile_label": sp["label"],
-                    **rec,
-                })
+                all_rows.append(
+                    {
+                        "size": size,
+                        "k": kv,
+                        "weight_label": ws["label"],
+                        "profile_label": sp["label"],
+                        **rec,
+                    }
+                )
 
     _print_all_cases_report(size_rows, k_rows, weight_rows, all_rows)
 
@@ -869,9 +1017,7 @@ def _action_generate() -> None:
     existing = _find_latest_dataset()
     if existing:
         answer = (
-            input(f"Dataset already exists at {existing}.\nRegenerate? [y/N]: ")
-            .strip()
-            .lower()
+            input(f"Dataset already exists at {existing}.\nRegenerate? [y/N]: ").strip().lower()
         )
         if answer != "y":
             print("Keeping existing dataset.")

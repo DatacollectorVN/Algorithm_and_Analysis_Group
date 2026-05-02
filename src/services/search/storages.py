@@ -23,9 +23,7 @@ class TopKDataStructure(ABC):
     @abstractmethod
     def worst_distance(self) -> float: ...
 
-    def scan(
-        self, pairs: Iterable[tuple[int, float]], k: int
-    ) -> list[tuple[int, float]]:
+    def scan(self, pairs: Iterable[tuple[int, float]], k: int) -> list[tuple[int, float]]:
         for profile_id, distance in pairs:
             self.push(distance, profile_id, k)
         return self.finalize()

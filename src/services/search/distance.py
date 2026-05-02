@@ -28,9 +28,7 @@ def weighted_squared_distance(
             are not finite.
     """
     if len(query) != VECTOR_DIM or len(point) != VECTOR_DIM or len(weights) != VECTOR_DIM:
-        raise ValidationError(
-            f"query, point, and weights must have length {VECTOR_DIM}"
-        )
+        raise ValidationError(f"query, point, and weights must have length {VECTOR_DIM}")
     _validate_weights(weights)
     total = 0.0
     for i in range(VECTOR_DIM):

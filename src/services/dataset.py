@@ -112,9 +112,7 @@ class Corpuses:
         Returns:
             9-float scaled tuple.
         """
-        numeric = tuple(
-            minmax_scalar(pre[i], stats.mins[i], stats.maxs[i]) for i in range(4)
-        )
+        numeric = tuple(minmax_scalar(pre[i], stats.mins[i], stats.maxs[i]) for i in range(4))
         domain_bits = pre[4:]
         return numeric + domain_bits
 
@@ -147,9 +145,7 @@ class Corpuses:
         )
 
     @classmethod
-    def iter_synthetic_profiles(
-        cls, count: int, *, seed: int | None = None
-    ) -> Iterator[Profile]:
+    def iter_synthetic_profiles(cls, count: int, *, seed: int | None = None) -> Iterator[Profile]:
         """Yield ``count`` synthetic profiles using only ``random``.
 
         Args:
@@ -203,9 +199,7 @@ class Corpuses:
         return normalized, stats
 
     @staticmethod
-    def normalize_query_raw(
-        raw: Profile | QProfile, stats: ScalingStats
-    ) -> tuple[float, ...]:
+    def normalize_query_raw(raw: Profile | QProfile, stats: ScalingStats) -> tuple[float, ...]:
         """Normalize a query profile with given :class:`ScalingStats`.
 
         Args:
@@ -284,7 +278,7 @@ class Corpuses:
                 mins=tuple(0.0 for _ in range(VECTOR_DIM)),
                 maxs=tuple(1.0 for _ in range(VECTOR_DIM)),
             )
-        return cls(vectorized_profiles=tuple(profiles), stats=stats, raw_profiles=tuple(profiles)  )
+        return cls(vectorized_profiles=tuple(profiles), stats=stats, raw_profiles=tuple(profiles))
 
     def normalize_query(self, raw: Profile | QProfile) -> tuple[float, ...]:
         """Normalize a query profile using this corpus's scaling stats.
@@ -300,19 +294,19 @@ class Corpuses:
     def get_profile(self, profile_id: int) -> Profile:
         """Get a raw profile by ``profile_id``."""
         return self.raw_profiles[profile_id - 1]
-    
+
     def get_vectorized_profile(self, profile_id: int) -> VectorizedProfile:
         """Get a vectorized profile by ``profile_id``."""
         return self.vectorized_profiles[profile_id - 1]
-    
+
     def get_profiles(self, profile_ids: Sequence[int]) -> tuple[Profile, ...]:
         """Get raw profiles by ``profile_ids``."""
         return tuple(self.raw_profiles[pid - 1] for pid in profile_ids)
-    
+
     def get_vectorized_profiles(self, profile_ids: Sequence[int]) -> tuple[VectorizedProfile, ...]:
         """Get vectorized profiles by ``profile_ids``."""
         return tuple(self.vectorized_profiles[pid - 1] for pid in profile_ids)
-    
+
     def build_vectorized_query(self, query_path: str | Path) -> VectorizedQueryProfile:
         """Load query JSON and normalize the query profile using this corpus's stats.
 

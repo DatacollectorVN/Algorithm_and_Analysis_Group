@@ -133,4 +133,4 @@ def load_query_json(
 
 def dump_json(data: object) -> str:
     """Serialize to compact JSON string with ASCII-safe output."""
-    return json.dumps(data, indent=2, sort_keys=True)
+    return json.dumps(data, indent=2)

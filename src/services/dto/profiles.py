@@ -13,6 +13,7 @@ type ProfileVector = tuple[float, ...]
 @dataclass(frozen=True, slots=True)
 class Profile:
     """One raw user record before normalization."""
+
     profile_id: int
     age: float
     monthly_income: float
@@ -39,9 +40,11 @@ class Profile:
             favourite_domain=str(item["favourite_domain"]),
         )
 
+
 @dataclass(frozen=True, slots=True)
 class QProfile:
     """The Query field in the query JSON."""
+
     age: float
     monthly_income: float
     self_learning_hours: float
@@ -65,6 +68,7 @@ class QProfile:
             highest_degree=str(item["highest_degree"]),
             favourite_domain=str(item["favourite_domain"]),
         )
+
 
 @dataclass(frozen=True, slots=True)
 class QueryProfile:
@@ -98,9 +102,13 @@ class QueryProfile:
             raise ValidationError("k must be between 1 and 20")
         profile = QProfile.init_from_json(doc["profile"], label="profile")
         if profile.highest_degree not in DEGREE_CATALOG:
-            raise ValidationError(f"profile.highest_degree not in catalog: {profile.highest_degree!r}")
+            raise ValidationError(
+                f"profile.highest_degree not in catalog: {profile.highest_degree!r}"
+            )
         if profile.favourite_domain not in DOMAIN_CATALOG:
-            raise ValidationError(f"profile.favourite_domain not in catalog: {profile.favourite_domain!r}")
+            raise ValidationError(
+                f"profile.favourite_domain not in catalog: {profile.favourite_domain!r}"
+            )
         weights_pairs = tuple(sorted(wobj.items(), key=lambda t: t[0]))
         return QueryProfile(profile=profile, weights=weights_pairs, k=k)
 
@@ -123,6 +131,7 @@ class VectorizedProfile:
 @dataclass(frozen=True, slots=True)
 class VectorizedQueryProfile:
     """Normalized query: reference vector, per-dimension weights, and ``k``."""
+
     vector: ProfileVector
     weights: ProfileVector
     k: int
