@@ -149,11 +149,11 @@ User: selects profile + k (menu) OR passes --query-profile <file>
                     │
                     ├─► Baseline strategy
                     │     Linear O(n) scan of all 100,000 profiles
-                    │     MinHeap(k) accumulates top-k  → O(n log k) total
+                    │     MaxHeap(k) accumulates top-k  → O(n log k) total
                     │
                     └─► KD-tree strategy
                           9-dim KD-tree with AABB pruning → O(log n) avg query
-                          MinHeap(k) for result accumulation
+                          MaxHeap(k) for result accumulation
                           (index loaded from kdtree.pkl when available)
 
 Returns: top-k profiles + distances as JSON
@@ -189,7 +189,7 @@ Two search strategies are provided and produce identical results:
 | **Baseline** (linear scan) | O(1)       | O(n)         | Small datasets, simplicity       |
 | **KD-tree**                | O(n log n) | O(log n) avg | Large datasets, repeated queries |
 
-Top-k candidates are maintained using a **min-heap** (`MinHeapStorage`) — O(log k) per insert, O(k log k) to finalize.
+Top-k candidates are maintained using a **max-heap** (`MaxHeapStorage`) — O(log k) per insert, O(k log k) to finalize.
 
 **Runtime**: Python 3.12+, standard library only — no third-party dependencies.
 
@@ -342,10 +342,10 @@ flowchart TB
     dataset["dataset.py — Corpus, Min-Max, synthetic data"]
     jsonio["jsonio.py — corpus / query JSON"]
     dto["dto/ — Profile, VectorizedProfile, ScalingStats, TopKResult"]
-    storages["search/storages.py — TopKDataStructure + MinHeapStorage"]
+    storages["search/storages.py — TopKDataStructure + MaxHeapStorage"]
     helper["helper.py — geometry, distance bounds, exceptions"]
     constants["constants.py — VECTOR_DIM=9, catalogs, tolerances"]
-    topk["search/topk.py — TopKManager (MinHeapStorage)"]
+    topk["search/topk.py — TopKManager (MaxHeapStorage)"]
     search["search/strategies/ — BaselineSearcher, KDTreeSearcher"]
   end
   main --> args
@@ -379,8 +379,8 @@ flowchart TB
 | `services/constants.py`                  | `VECTOR_DIM = 9`, degree/domain catalogs, tolerances                                |
 | `services/helper.py`                     | `minmax_scalar`, AABB geometry, `ValidationError`                                   |
 | `services/dto/profiles.py`               | Immutable dataclasses: `Profile`, `VectorizedProfile`, `ScalingStats`, `TopKResult` |
-| `services/search/storages.py`            | `TopKDataStructure` ABC + `MinHeapStorage` implementation                           |
-| `services/search/topk.py`                | `TopKManager` backed by `MinHeapStorage`                                            |
+| `services/search/storages.py`            | `TopKDataStructure` ABC + `MaxHeapStorage` implementation                           |
+| `services/search/topk.py`                | `TopKManager` backed by `MaxHeapStorage`                                            |
 | `services/search/distance.py`            | `weighted_squared_distance`                                                         |
 | `services/search/strategies/baseline.py` | `BaselineSearcher` — O(n) exhaustive scan                                           |
 | `services/search/strategies/kdtree.py`   | `KDTreeSearcher` — 9-d KD-tree with AABB pruning                                    |

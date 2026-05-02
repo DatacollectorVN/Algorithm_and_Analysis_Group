@@ -31,8 +31,8 @@ class TopKDataStructure(ABC):
         return self.finalize()
 
 
-class MinHeapStorage(TopKDataStructure):
-    """Top-k via a custom array-based binary min-heap.
+class MaxHeapStorage(TopKDataStructure):
+    """Top-k via a custom array-based binary max-heap.
 
     The heap root always holds the *worst* (largest) current candidate so that
     it can be replaced in O(log k) when a better entry arrives.

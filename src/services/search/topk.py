@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from services.search.storages import MinHeapStorage
+from services.search.storages import MaxHeapStorage
 from services.helper import ValidationError
 
 
 class TopKManager:
-    """Top-k accumulator backed by MinHeapStorage."""
+    """Top-k accumulator backed by MaxHeapStorage."""
 
     def __init__(self) -> None:
-        self._storage = MinHeapStorage()
+        self._storage = MaxHeapStorage()
 
     def push(self, distance: float, profile_id: int, k: int) -> None:
         if k < 1:
